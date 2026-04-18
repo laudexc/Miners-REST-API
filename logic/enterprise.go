@@ -13,10 +13,10 @@ type Enterprise struct {
 
 	balance      int
 	activeMiners map[int]*internal.MinerState
-	hiredStats   map[internal.MinerClass]int
-	equipment    map[internal.EquipmentType]bool
+	hiredStats   map[internal.MinerClass]int     // статы всех нанятых майнеров
+	equipment    map[internal.EquipmentType]bool // купленное оборудование
 
-	incomeCh chan int
+	incomeCh chan int // канал в который идет прибыль
 
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -29,7 +29,7 @@ type Enterprise struct {
 }
 
 func NewEnterprise() *Enterprise {
-	e := &Enterprise{
+	e := &Enterprise{ // создание компании
 		activeMiners: make(map[int]*internal.MinerState),
 		hiredStats:   make(map[internal.MinerClass]int),
 		equipment:    make(map[internal.EquipmentType]bool),
@@ -37,13 +37,14 @@ func NewEnterprise() *Enterprise {
 	}
 
 	for equipmentType := range internal.EquipmentPrices() {
+		// все купленное оборудование инициализируется как false
 		e.equipment[equipmentType] = false
 	}
 
 	return e
 }
 
-func (e *Enterprise) Start() error {
+func (e *Enterprise) Start() error { // старт базовой компании с добычей 1 уголь/c
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
@@ -51,15 +52,15 @@ func (e *Enterprise) Start() error {
 		return ErrAlreadyStarted
 	}
 
-	e.ctx, e.cancel = context.WithCancel(context.Background())
+	e.ctx, e.cancel = context.WithCancel(context.Background()) // добавить контекст с отменой
 	e.startedAt = time.Now()
 	e.isStarted = true
 
 	e.wg.Add(1)
-	go e.incomeAggregator()
+	go e.incomeAggregator() // TODO: что это?
 
 	e.wg.Add(1)
-	go e.passiveIncomeLoop()
+	go e.passiveIncomeLoop() // запустить пассивную добычу
 
 	return nil
 }
@@ -208,7 +209,7 @@ func (e *Enterprise) Shutdown() (time.Duration, error) {
 func (e *Enterprise) passiveIncomeLoop() {
 	defer e.wg.Done()
 
-	ticker := time.NewTicker(time.Second)
+	ticker := time.NewTicker(time.Second) // TODO: что это?
 	defer ticker.Stop()
 
 	for {
@@ -233,6 +234,7 @@ func (e *Enterprise) incomeAggregator() {
 		select {
 		case <-e.ctx.Done():
 			return
+
 		case amount := <-e.incomeCh:
 			e.mu.Lock()
 			e.balance += amount
@@ -241,10 +243,11 @@ func (e *Enterprise) incomeAggregator() {
 	}
 }
 
+// запуск нужного майнера по айди
 func (e *Enterprise) runMiner(minerID int, profile internal.MinerProfile) {
 	defer e.wg.Done()
 
-	ticker := time.NewTicker(time.Duration(profile.IntervalSec) * time.Second)
+	ticker := time.NewTicker(time.Duration(profile.IntervalSec) * time.Second) // TODO: что это?
 	defer ticker.Stop()
 
 	for mineIdx := 0; mineIdx < profile.Energy; mineIdx++ {
