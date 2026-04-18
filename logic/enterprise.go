@@ -23,7 +23,6 @@ type Enterprise struct {
 	wg     sync.WaitGroup
 
 	startedAt  time.Time
-	stoppedAt  *time.Time
 	isStarted  bool
 	isShutdown bool
 	nextID     int
