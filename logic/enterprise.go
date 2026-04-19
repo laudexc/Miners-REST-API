@@ -250,50 +250,50 @@ func (e *Enterprise) runMiner(minerID int, profile internal.MinerProfile) {
 	ticker := time.NewTicker(time.Duration(profile.IntervalSec) * time.Second) // TODO: что это?
 	defer ticker.Stop()
 
-	for mineIdx := 0; mineIdx < profile.Energy; mineIdx++ {
+	for mineIdx := 0; mineIdx < profile.Energy; mineIdx++ { // начать копать на сколько хватит энергии
 		select {
-		case <-e.ctx.Done():
+		case <-e.ctx.Done(): // если контекст завершился, то майнер останавливается
 			e.markMinerStopped(minerID)
 			return
 		case <-ticker.C:
 		}
 
-		coalYield := profile.CoalPerMine + profile.ProgressStep*mineIdx
+		coalYield := profile.CoalPerMine + profile.ProgressStep*mineIdx // добытый уголь = уголь за добычу + прогресс за каждый добытый уголь(у слабого и обычного = 0)
 
 		select {
 		case <-e.ctx.Done():
-			e.markMinerStopped(minerID)
+			e.markMinerStopped(minerID) // проверка завершения контекста
 			return
-		case e.incomeCh <- coalYield:
-			e.updateMinerAfterMine(minerID, coalYield)
+		case e.incomeCh <- coalYield: // положить добытый уголь в канал
+			e.updateMinerAfterMine(minerID, coalYield) // обновить сведения майнера
 		}
 	}
 
-	e.markMinerStopped(minerID)
+	e.markMinerStopped(minerID) // когда энергия заканчивается - майнер останавливается
 }
 
-func (e *Enterprise) updateMinerAfterMine(minerID int, coalYield int) {
+func (e *Enterprise) updateMinerAfterMine(minerID int, coalYield int) { // обновить сведения о майнере по айди
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
-	miner, ok := e.activeMiners[minerID]
+	miner, ok := e.activeMiners[minerID] // проверить по списку всех майнеров, найти нужного по айди
 	if !ok {
 		return
 	}
 
-	miner.Energy--
-	miner.CoalPerMining = coalYield
+	miner.Energy--                  // -1 энергия за копание
+	miner.CoalPerMining = coalYield // TODO: что??
 }
 
-func (e *Enterprise) markMinerStopped(minerID int) {
+func (e *Enterprise) markMinerStopped(minerID int) { // остановить раскопки майнера
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
-	miner, ok := e.activeMiners[minerID]
+	miner, ok := e.activeMiners[minerID] // проверить по списку всех майнеров, найти нужного по айди
 	if !ok {
 		return
 	}
 
-	miner.IsWorking = false
-	delete(e.activeMiners, minerID)
+	miner.IsWorking = false         // поставить метку что майнер не работает
+	delete(e.activeMiners, minerID) // TODO: удалить майнера из активных? Насколько ли это хороший выбор?
 }
