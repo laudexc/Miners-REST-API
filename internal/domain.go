@@ -1,6 +1,6 @@
 package internal
 
-type MinerState struct {
+type MinerState struct { // структура майнера
 	ID            int
 	Class         MinerClass
 	Energy        int
@@ -8,7 +8,7 @@ type MinerState struct {
 	CoalPerMining int
 }
 
-type EnterpriseSnapshot struct {
+type EnterpriseSnapshot struct { // структура для снимка всего что имеется на предприятии
 	Balance      int
 	ActiveMiners []MinerState
 	HiredStats   map[MinerClass]int

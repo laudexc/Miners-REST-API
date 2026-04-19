@@ -22,7 +22,7 @@ const (
 	WagonPrice       = 50000
 )
 
-type MinerProfile struct {
+type MinerProfile struct { // профиль для каждого майнера
 	Cost         int
 	Energy       int
 	CoalPerMine  int
