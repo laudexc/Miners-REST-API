@@ -1,9 +1,12 @@
 ﻿package main
 
 import (
-	"fmt"
+	"log"
+	"prj2/logic"
 )
 
 func main() {
-	fmt.Println("Hello")
+	if err := logic.NewEnterprise().Start(); err != nil {
+		log.Println("failed to start enterprise:", err)
+	}
 }
