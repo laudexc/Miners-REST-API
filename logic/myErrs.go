@@ -1,8 +1,6 @@
 package logic
 
-import (
-	"errors"
-)
+import "errors"
 
 var (
 	ErrNotStarted           = errors.New("enterprise is not started")

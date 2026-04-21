@@ -12,7 +12,7 @@ type Enterprise struct {
 	mu sync.RWMutex
 
 	balance      int
-	activeMiners map[int]*internal.MinerState
+	activeMiners map[int]*internal.MinerState    // все работающие майнеры
 	hiredStats   map[internal.MinerClass]int     // статы всех нанятых майнеров
 	equipment    map[internal.EquipmentType]bool // купленное оборудование
 
@@ -57,7 +57,7 @@ func (e *Enterprise) Start() error { // старт базовой компани
 	e.isStarted = true
 
 	e.wg.Add(1)
-	go e.incomeAggregator() // TODO: что это?
+	go e.incomeAggregator() // incomeAggregator постоянно читает incomeCh в который кидают уголь и прибавляет в balance
 
 	e.wg.Add(1)
 	go e.passiveIncomeLoop() // запустить пассивную добычу
