@@ -20,7 +20,7 @@ func (h *HTTPHandlers) RegisterRoutes(r *mux.Router) {
 	// - Шахтёры:
 	//    TODO: - Можно получить информацию о требуемом размере оплаты труда для каждого класса шахтёров
 	r.HandleFunc("/miners/salary", h.MinersSalary).Methods(http.MethodGet)
-	//    TODO: - Можно нанять нового
+	//    NOTE: - Можно нанять нового
 	r.HandleFunc("/miners", h.HireMiner).Methods(http.MethodPost)
 	//    TODO: - Можно получить список всех работающих в данный момент
 	r.HandleFunc("/miners/active", h.ListOfActive).Methods(http.MethodGet)
@@ -36,26 +36,10 @@ func (h *HTTPHandlers) RegisterRoutes(r *mux.Router) {
 	r.HandleFunc("/equipment", h.PurchasedEquipment).Methods(http.MethodGet)
 
 	// - Предприятие:
-	//    TODO: - Можно получить промежуточную информацию (текущий баланс, сколько каких шахтёров было нанято за всё время, и тд, по желанию)
+	//    NOTE: - Можно получить промежуточную информацию (текущий баланс, сколько каких шахтёров было нанято за всё время, и тд, по желанию)
 	r.HandleFunc("/enterprise/status", h.StatusEntp).Methods(http.MethodGet)
 	//    NOTE: - Можно отправить запрос на завершение игры
 	r.HandleFunc("/enterprise/shutdown", h.ShutdownEntp).Methods(http.MethodPost)
-}
-
-func writeLogicErr(w http.ResponseWriter, err error) {
-	writeErr(w, http.StatusBadRequest, err.Error())
-}
-
-func writeErr(w http.ResponseWriter, code int, msg string) {
-	writeJSON(w, code, ErrorResponse{
-		Error: msg,
-	})
-}
-
-func writeJSON(w http.ResponseWriter, code int, v any) { // v - это мапа/структура, которую надо сериализовать для JSON
-	w.Header().Set("Content-Type", "application/json") // говорим клиенту явно: в ответе JSON
-	w.WriteHeader(code)                                // поставить переданный HTTP статус для заголовка
-	_ = json.NewEncoder(w).Encode(v)                   // v (структуру/мапу), сериализует в JSON и пишет прямо в ответ
 }
 
 /*
@@ -298,4 +282,23 @@ func (h *HTTPHandlers) ShutdownEntp(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, ShutdownResponse{DurationSec: int64(d / time.Second)})
+}
+
+// Быстрая отправка логической ошибки клиенту
+func writeLogicErr(w http.ResponseWriter, err error) {
+	writeErr(w, http.StatusBadRequest, err.Error())
+}
+
+// Быстрая отправка ошибки клиенту
+func writeErr(w http.ResponseWriter, code int, msg string) {
+	writeJSON(w, code, ErrorResponse{
+		Error: msg,
+	})
+}
+
+// Быстрая отправка JSON ответа с сериализацией для клиента
+func writeJSON(w http.ResponseWriter, code int, v any) { // v - это мапа/структура, которую надо сериализовать для JSON
+	w.Header().Set("Content-Type", "application/json") // говорим клиенту явно: в ответе JSON
+	w.WriteHeader(code)                                // поставить переданный HTTP статус для заголовка
+	_ = json.NewEncoder(w).Encode(v)                   // v (структуру/мапу), сериализует в JSON и пишет прямо в ответ
 }
