@@ -22,6 +22,5 @@ func (s *HTTPServer) StartServer() error {
 
 		return err
 	}
-
 	return nil
 }

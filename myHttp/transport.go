@@ -30,16 +30,16 @@ func (h *HTTPHandlers) RegisterRoutes(r *mux.Router) {
 	// - Оборудование:
 	//    TODO: - Можно получить информацию о стоимости всех видов оборудования
 	r.HandleFunc("/equipment/prices", h.EquipmentPrice).Methods(http.MethodGet).Queries("class", "{class}")
-	//    TODO: - Можно купить новое оборудование
-	r.HandleFunc("/equipment/{title}/buy", h.BuyEquipment).Methods(http.MethodPost)
+	//    NOTE: - Можно купить новое оборудование
+	r.HandleFunc("/equipment/{type}/buy", h.BuyEquipment).Methods(http.MethodPost)
 	//    TODO: - Можно получать информацию о том, какое оборудование уже приобретено, а какое — нет
 	r.HandleFunc("/equipment", h.PurchasedEquipment).Methods(http.MethodGet)
 
 	// - Предприятие:
 	//    TODO: - Можно получить промежуточную информацию (текущий баланс, сколько каких шахтёров было нанято за всё время, и тд, по желанию)
-	r.HandleFunc("/enterprise/status", h.TakeSnapshotEntp).Methods(http.MethodGet)
-	//    TODO: - Можно отправить запрос на завершение игры
-	r.HandleFunc("/enterprise/shutdown", h.ShutdownGame).Methods(http.MethodPost)
+	r.HandleFunc("/enterprise/status", h.StatusEntp).Methods(http.MethodGet)
+	//    NOTE: - Можно отправить запрос на завершение игры
+	r.HandleFunc("/enterprise/shutdown", h.ShutdownEntp).Methods(http.MethodPost)
 }
 
 func writeLogicErr(w http.ResponseWriter, err error) {
@@ -97,6 +97,24 @@ func (h *HTTPHandlers) HireMiner(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	var n HireMinerRequest
+	if err := json.NewDecoder(r.Body).Decode(&n); err != nil {
+		writeErr(w, http.StatusBadRequest, "invalod JSON in request body")
+		return
+	}
+
+	miner, err := h.enterprise.HireMiner(internal.MinerClass(n.Class))
+	if err != nil {
+		writeLogicErr(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusCreated, HireMinerResponse{
+		Miner: MinerDTO{
+			ID: miner.ID, Class: string(miner.Class), Energy: miner.Energy,
+			IsWorking: miner.IsWorking, CoalPerMining: miner.CoalPerMining,
+		},
+	})
 }
 
 /*
@@ -223,12 +241,35 @@ failed:
   - status code: 500...
   - response body: JSON with error + time
 */
-func (h *HTTPHandlers) TakeSnapshotEntp(w http.ResponseWriter, r *http.Request) {
+func (h *HTTPHandlers) StatusEntp(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		writeJSON(w, http.StatusBadRequest, ErrorResponse{Error: "method should be GET!"})
 		return
 	}
 
+	snapshot := h.enterprise.Status()
+	active := make([]MinerDTO, 0, len(snapshot.ActiveMiners))
+
+	for _, m := range snapshot.ActiveMiners {
+		active = append(active, MinerDTO{
+			ID: m.ID, Class: string(m.Class), Energy: m.Energy,
+			IsWorking: m.IsWorking, CoalPerMining: m.CoalPerMining,
+		})
+	}
+
+	hired := make(map[string]int, len(snapshot.HiredStats))
+	for k, v := range snapshot.HiredStats {
+		hired[string(k)] = v
+	}
+
+	eq := make(map[string]bool, len(snapshot.Equipment))
+	for k, v := range snapshot.Equipment {
+		eq[string(k)] = v
+	}
+
+	writeJSON(w, http.StatusOK, EnterpriseStatusResponse{
+		Balance: snapshot.Balance, ActiveMiners: active, HiredStats: hired, Equipment: eq,
+	})
 }
 
 /*
@@ -244,7 +285,7 @@ failed:
   - status code: 400, 409, 500...
   - response body: JSON with error + time
 */
-func (h *HTTPHandlers) ShutdownGame(w http.ResponseWriter, r *http.Request) {
+func (h *HTTPHandlers) ShutdownEntp(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		writeJSON(w, http.StatusBadRequest, ErrorResponse{Error: "method should be POST!"})
 		return
