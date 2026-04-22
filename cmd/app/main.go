@@ -7,11 +7,11 @@ import (
 )
 
 func main() {
-	if err := logic.NewEnterprise().Start(); err != nil {
+	enterprise := logic.NewEnterprise()
+	if err := enterprise.Start(); err != nil {
 		log.Println("failed to start enterprise:", err)
 	}
 
-	enterprise := logic.NewEnterprise()
 	handlers := myHttp.NewHTTPHandlers(enterprise)
 	server := myHttp.NewHTTTPServer(handlers)
 	if err := server.StartServer(); err != nil {
