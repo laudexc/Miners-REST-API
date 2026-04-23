@@ -1,28 +1,5 @@
 package myHttp
 
-// type ErrorDTO struct {
-// 	Msg  string
-// 	Time time.Time
-// }
-
-// func (ed ErrorDTO) ToString() string {
-// 	b, err := json.MarshalIndent(ed, "", "    ")
-// 	if err != nil {
-// 		log.Fatalln("Impossible error in MarshalIndent", err)
-// 	}
-
-// 	return string(b)
-// }
-
-// func NewErrorDTO(err error) ErrorDTO {
-// 	errDTO := ErrorDTO{
-// 		Msg:  err.Error(),
-// 		Time: time.Now(),
-// 	}
-
-// 	return errDTO
-// }
-
 type HireMinerRequest struct {
 	Class string `json:"class"` // weak|normal|strong
 }
@@ -40,10 +17,11 @@ type HireMinerResponse struct {
 }
 
 type EnterpriseStatusResponse struct {
-	Balance      int             `json:"balance"`
-	ActiveMiners []MinerDTO      `json:"active_miners"`
-	HiredStats   map[string]int  `json:"hired_stats"`
-	Equipment    map[string]bool `json:"equipment"`
+	Balance       int             `json:"balance"`
+	ActiveMiners  []MinerDTO      `json:"active_miners"`
+	HiredStats    map[string]int  `json:"hired_stats"`
+	Equipment     map[string]bool `json:"equipment"`
+	Notifications []string        `json:"notifications`
 }
 
 type BuyEquipmentResponse struct {

@@ -13,7 +13,9 @@ func NewHTTTPServer(h *HTTPHandlers) *HTTPServer { return &HTTPServer{httpHandle
 
 func (s *HTTPServer) StartServer() error {
 	router := mux.NewRouter()
-	s.httpHandlers.RegisterRoutes(router) // NOTE: Важная деталь, позволяет вынести все хендлеры в отдельную функцию или пакет
+	// NOTE: Важная деталь, позволяет вынести все хендлеры в отдельную функцию или пакет
+	// + к этому, не нужно проверять в ручную методы хендлеров
+	s.httpHandlers.RegisterRoutes(router)
 
 	if err := http.ListenAndServe(":8080", router); err != nil {
 		if errors.Is(err, http.ErrServerClosed) { // не является ошибкой

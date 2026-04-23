@@ -13,4 +13,5 @@ type EnterpriseSnapshot struct { // структура для снимка вс�
 	ActiveMiners []MinerState
 	HiredStats   map[MinerClass]int
 	Equipment    map[EquipmentType]bool
+	Notifications []string
 }

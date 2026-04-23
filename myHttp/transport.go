@@ -19,25 +19,21 @@ func NewHTTPHandlers(Entp *logic.Enterprise) *HTTPHandlers { return &HTTPHandler
 func (h *HTTPHandlers) RegisterRoutes(r *mux.Router) {
 	// - Шахтёры:
 	//    NOTE: - Можно получить информацию о требуемом размере оплаты труда для каждого класса шахтёров
-	r.HandleFunc("/miners/salary", h.MinersSalary).Methods(http.MethodGet)
+	r.HandleFunc("/miners/prices", h.MinersSalary).Methods(http.MethodGet)
 	//    NOTE: - Можно нанять нового
 	r.HandleFunc("/miners", h.HireMiner).Methods(http.MethodPost)
-	//    NOTE: - Можно получить список всех работающих в данный момент
+	//    NOTE: - Можно получить список всех работающих в данный момент + фильтр по классу
 	r.HandleFunc("/miners/active", h.ListOfActive).Methods(http.MethodGet)
-	//    NOTE: - Можно получить список всех работающих в данный момент, отфильтровав по классу
-	r.HandleFunc("/miners/active/{class}", h.ListActiveByClass).Methods(http.MethodGet).Queries("class", "{class}")
 
 	// - Оборудование:
 	//    NOTE: - Можно получить информацию о стоимости всех видов оборудования
-	r.HandleFunc("/equipment/prices", h.EquipmentPrice).Methods(http.MethodGet).Queries("class", "{class}")
+	r.HandleFunc("/equipment/prices", h.EquipmentPrice).Methods(http.MethodGet)
 	//    NOTE: - Можно купить новое оборудование
 	r.HandleFunc("/equipment/{type}/buy", h.BuyEquipment).Methods(http.MethodPost)
 	//    NOTE: - Можно получать информацию о том, какое оборудование уже приобретено, а какое — нет
 	r.HandleFunc("/equipment", h.PurchasedEquipment).Methods(http.MethodGet)
 
 	// - Предприятие:
-	// 		NOTE: - Запустить работу предприятия
-	r.HandleFunc("/enterprise", h.StartEntp).Methods(http.MethodPost)
 	//    NOTE: - Можно получить промежуточную информацию (текущий баланс, сколько каких шахтёров было нанято за всё время, и тд, по желанию)
 	r.HandleFunc("/enterprise/status", h.StatusEntp).Methods(http.MethodGet)
 	//    NOTE: - Можно отправить запрос на завершение игры
@@ -54,15 +50,10 @@ succeed:
   - response body: JSON with miners classes and hiring prices
 
 failed:
-  - status code: 500...
-  - response body: JSON with error + time
+  - status code: ?
+  - response body: ?
 */
 func (h *HTTPHandlers) MinersSalary(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		writeJSON(w, http.StatusMethodNotAllowed, ErrorResponse{Error: "method should be GET!"})
-		return
-	}
-
 	profiles := internal.MinerProfiles()
 	writeJSON(w, http.StatusOK, profiles)
 }
@@ -77,18 +68,13 @@ succeed:
   - response body: JSON represent created miner
 
 failed:
-  - status code: 400, 404, 409, 500...
-  - response body: JSON with error + time
+  - status code: ?
+  - response body: ?
 */
 func (h *HTTPHandlers) HireMiner(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		writeJSON(w, http.StatusMethodNotAllowed, ErrorResponse{Error: "method should be POST!"})
-		return
-	}
-
 	var n HireMinerRequest
 	if err := json.NewDecoder(r.Body).Decode(&n); err != nil {
-		writeErr(w, http.StatusBadRequest, "invalod JSON in request body")
+		writeErr(w, http.StatusBadRequest, "invalid JSON in request body")
 		return
 	}
 
@@ -116,46 +102,19 @@ succeed:
   - response body: JSON represent all active miners
 
 failed:
-  - status code: 405...
-  - response body: JSON with error
+  - status code: ?
+  - response body: JSON ?
 */
 func (h *HTTPHandlers) ListOfActive(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		writeJSON(w, http.StatusMethodNotAllowed, ErrorResponse{Error: "method should be GET!"})
-		return
-	}
-
+	class := r.URL.Query().Get("class")
 	active := h.enterprise.Status().ActiveMiners
-	writeJSON(w, http.StatusOK, active)
-}
+	list := make([]internal.MinerState, 0, len(active))
 
-/*
-pattern: /miners/active?class={class}
-method:  GET
-info:    class in URL path/query
-
-succeed:
-  - status code: 200 OK
-  - response body: JSON represent active miners filtered by class
-
-failed:
-  - status code: 405...
-  - response body: JSON with error
-*/
-func (h *HTTPHandlers) ListActiveByClass(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		writeJSON(w, http.StatusMethodNotAllowed, ErrorResponse{Error: "method should be GET!"})
-		return
-	}
-
-	c := mux.Vars(r)["class"]
-	activeMiners := h.enterprise.Status().ActiveMiners
-	list := make([]internal.MinerState, 0, len(activeMiners))
-
-	for _, minerStruct := range activeMiners {
-		if string(minerStruct.Class) == c && minerStruct.IsWorking {
-			list = append(list, minerStruct)
+	for _, m := range active {
+		if class != "" && string(m.Class) != class {
+			continue
 		}
+		list = append(list, m)
 	}
 
 	writeJSON(w, http.StatusOK, list)
@@ -171,15 +130,10 @@ succeed:
   - response body: JSON with equipment prices
 
 failed:
-  - status code: only 405...
-  - response body: JSON with error
+  - status code: ?
+  - response body: JSON ?
 */
 func (h *HTTPHandlers) EquipmentPrice(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		writeJSON(w, http.StatusMethodNotAllowed, ErrorResponse{Error: "method should be GET!"})
-		return
-	}
-
 	eqPrices := internal.EquipmentPrices()
 	writeJSON(w, http.StatusOK, eqPrices)
 }
@@ -194,15 +148,10 @@ succeed:
   - response body: JSON represent purchase result
 
 failed:
-  - status code: 405...
-  - response body: JSON with error + time
+  - status code: ?
+  - response body: JSON ?
 */
 func (h *HTTPHandlers) BuyEquipment(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		writeJSON(w, http.StatusMethodNotAllowed, ErrorResponse{Error: "method should be POST!"})
-		return
-	}
-
 	t := mux.Vars(r)["type"]
 	if err := h.enterprise.BuyEquipment(internal.EquipmentType(t)); err != nil {
 		writeLogicErr(w, err)
@@ -222,41 +171,13 @@ succeed:
   - response body: JSON represent purchased/not purchased equipment
 
 failed:
-  - status code: only 405...
-  - response body: JSON + error
+  - status code: ?
+  - response body: JSON ?
 */
 func (h *HTTPHandlers) PurchasedEquipment(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		writeJSON(w, http.StatusMethodNotAllowed, ErrorResponse{Error: "method should be GET!"})
-		return
-	}
-
 	s := h.enterprise.Status()
 	purchased := s.Equipment
 	writeJSON(w, http.StatusOK, purchased)
-}
-
-/*
-pattern: /enterprise
-method:  POST
-info:    no input required
-
-succeed:
-  - status code: 201 Created
-  - response body: JSON represent new enterprise
-
-failed:
-  - status code: only 405...
-  - response body: JSON with error
-*/
-func (h *HTTPHandlers) StartEntp(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		writeJSON(w, http.StatusMethodNotAllowed, ErrorResponse{Error: "method should be POST!"})
-		return
-	}
-
-	entp := logic.NewEnterprise()
-	writeJSON(w, http.StatusCreated, entp)
 }
 
 /*
@@ -269,15 +190,10 @@ succeed:
   - response body: JSON represent current enterprise snapshot
 
 failed:
-  - status code: 500...
-  - response body: JSON with error + time
+  - status code: ?
+  - response body: JSON ?
 */
 func (h *HTTPHandlers) StatusEntp(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		writeJSON(w, http.StatusMethodNotAllowed, ErrorResponse{Error: "method should be GET!"})
-		return
-	}
-
 	snapshot := h.enterprise.Status()
 	active := make([]MinerDTO, 0, len(snapshot.ActiveMiners))
 
@@ -299,7 +215,7 @@ func (h *HTTPHandlers) StatusEntp(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, EnterpriseStatusResponse{
-		Balance: snapshot.Balance, ActiveMiners: active, HiredStats: hired, Equipment: eq,
+		Balance: snapshot.Balance, ActiveMiners: active, HiredStats: hired, Equipment: eq, Notifications: snapshot.Notifications,
 	})
 }
 
@@ -313,15 +229,10 @@ succeed:
   - response body: JSON represent shutdown result + game duration
 
 failed:
-  - status code: 400, 409, 500...
-  - response body: JSON with error + time
+  - status code: ?
+  - response body: JSON ?
 */
 func (h *HTTPHandlers) ShutdownEntp(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		writeJSON(w, http.StatusMethodNotAllowed, ErrorResponse{Error: "method should be POST!"})
-		return
-	}
-
 	d, err := h.enterprise.Shutdown()
 	if err != nil {
 		writeLogicErr(w, err)
