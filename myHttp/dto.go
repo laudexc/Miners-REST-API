@@ -13,7 +13,7 @@ type MinerDTO struct {
 }
 
 type HireMinerResponse struct {
-	Miner MinerDTO `json:"miner"`
+	Miners []MinerDTO `json:"miners"`
 }
 
 type EnterpriseStatusResponse struct {
@@ -21,7 +21,7 @@ type EnterpriseStatusResponse struct {
 	ActiveMiners  []MinerDTO      `json:"active_miners"`
 	HiredStats    map[string]int  `json:"hired_stats"`
 	Equipment     map[string]bool `json:"equipment"`
-	Notifications []string        `json:"notifications`
+	Notifications []string        `json:"notifications"`
 }
 
 type BuyEquipmentResponse struct {

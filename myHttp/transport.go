@@ -3,15 +3,17 @@ package myHttp
 import (
 	"encoding/json"
 	"net/http"
+	"os"
 	"prj2/internal"
 	"prj2/logic"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gorilla/mux"
 )
 
-// internal/transport/http
-// HTTP-обработчики, роутинг, валидация входных данных, маппинг ошибок в HTTP-ответы.
+// NOTE: Тут все HTTP-обработчики, роутинг, валидация входных данных, маппинг ошибок в HTTP-ответы.
 type HTTPHandlers struct{ enterprise *logic.Enterprise }
 
 func NewHTTPHandlers(Entp *logic.Enterprise) *HTTPHandlers { return &HTTPHandlers{enterprise: Entp} }
@@ -20,8 +22,8 @@ func (h *HTTPHandlers) RegisterRoutes(r *mux.Router) {
 	// - Шахтёры:
 	//    NOTE: - Можно получить информацию о требуемом размере оплаты труда для каждого класса шахтёров
 	r.HandleFunc("/miners/prices", h.MinersSalary).Methods(http.MethodGet)
-	//    NOTE: - Можно нанять нового
-	r.HandleFunc("/miners", h.HireMiner).Methods(http.MethodPost)
+	//    NOTE: - Можно нанять нового по query параметрам ?class=class&count=count
+	r.HandleFunc("/miners/hire", h.HireMiner).Queries("class", "{class}", "count", "{count}").Methods(http.MethodPost)
 	//    NOTE: - Можно получить список всех работающих в данный момент + фильтр по классу
 	r.HandleFunc("/miners/active", h.ListOfActive).Methods(http.MethodGet)
 
@@ -38,6 +40,9 @@ func (h *HTTPHandlers) RegisterRoutes(r *mux.Router) {
 	r.HandleFunc("/enterprise/status", h.StatusEntp).Methods(http.MethodGet)
 	//    NOTE: - Можно отправить запрос на завершение игры
 	r.HandleFunc("/enterprise/shutdown", h.ShutdownEntp).Methods(http.MethodPost)
+
+	//    NOTE: - Можно отравить запрос на завершение работы приложения
+	r.HandleFunc("/app/close", h.AppClose).Methods(http.MethodPut)
 }
 
 /*
@@ -61,7 +66,7 @@ func (h *HTTPHandlers) MinersSalary(w http.ResponseWriter, r *http.Request) {
 /*
 pattern: /miners
 method:  POST
-info:    JSON in HTTP request body (miner class)
+info:    Query params
 
 succeed:
   - status code: 201 Created
@@ -72,24 +77,41 @@ failed:
   - response body: ?
 */
 func (h *HTTPHandlers) HireMiner(w http.ResponseWriter, r *http.Request) {
-	var n HireMinerRequest
-	if err := json.NewDecoder(r.Body).Decode(&n); err != nil {
-		writeErr(w, http.StatusBadRequest, "invalid JSON in request body")
+	class := r.URL.Query().Get("class")
+	class = strings.TrimSpace(class)
+	countStr := r.URL.Query().Get("count")
+
+	count, err := strconv.Atoi(countStr)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if class == "" {
+		writeErr(w, http.StatusBadRequest, "the class field cannot be empty")
+		return
+	}
+	if int(count) < 1 { // если передано количество майнеров для найма < 1
+		writeErr(w, http.StatusBadRequest, logic.ErrMinersWrongQuantity.Error())
 		return
 	}
 
-	miner, err := h.enterprise.HireMiner(internal.MinerClass(n.Class))
+	miners, err := h.enterprise.HireMiner(internal.MinerClass(class), internal.MinersCount(count))
 	if err != nil {
 		writeLogicErr(w, err)
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, HireMinerResponse{
-		Miner: MinerDTO{
-			ID: miner.ID, Class: string(miner.Class), Energy: miner.Energy,
-			IsWorking: miner.IsWorking, CoalPerMining: miner.CoalPerMining,
-		},
-	})
+	respMiners := make([]MinerDTO, 0, len(miners))
+	for _, m := range miners {
+		respMiners = append(respMiners, MinerDTO{
+			ID:            m.ID,
+			Class:         string(m.Class),
+			Energy:        m.Energy,
+			IsWorking:     m.IsWorking,
+			CoalPerMining: m.CoalPerMining,
+		})
+	}
+	writeJSON(w, http.StatusCreated, HireMinerResponse{Miners: respMiners})
 }
 
 /*
@@ -240,6 +262,15 @@ func (h *HTTPHandlers) ShutdownEntp(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, ShutdownResponse{DurationSec: int64(d / time.Second)})
+}
+
+func (h *HTTPHandlers) AppClose(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, "goodbye.")
+
+	go func() {
+		time.Sleep(500 * time.Millisecond)
+		os.Exit(0)
+	}()
 }
 
 // Быстрая отправка логической ошибки клиенту

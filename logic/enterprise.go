@@ -74,46 +74,56 @@ func (e *Enterprise) Start() error { // старт базовой компани
 	return nil
 }
 
-func (e *Enterprise) HireMiner(class internal.MinerClass) (internal.MinerState, error) { // нанять майнера
+func (e *Enterprise) HireMiner(class internal.MinerClass, count internal.MinersCount) ([]*internal.MinerState, error) { // нанять майнера
 	profile, ok := internal.MinerProfiles()[class] // internal.MinerProfiles() возвращает map[MinerClass]MinerProfile
 	// Дальше [class] берёт профиль по ключу (классу шахтёра)
 	if !ok {
-		return internal.MinerState{}, ErrUnknownMinerClass
+		return nil, ErrUnknownMinerClass
 	}
 
 	e.mu.Lock()
+	if int(count) < 1 { // если передано количество майнеров для найма < 1
+		e.mu.Unlock()
+		return nil, ErrMinersWrongQuantity
+	}
 	if !e.isStarted { // если майнер не запущен
 		e.mu.Unlock()
-		return internal.MinerState{}, ErrNotStarted
+		return nil, ErrNotStarted
 	}
 	if e.isShutdown { // если все завершено
 		e.mu.Unlock()
-		return internal.MinerState{}, ErrAlreadyStopped
+		return nil, ErrAlreadyStopped
 	}
-	if e.balance < profile.Cost { // если баланс меньше стоимости шахтера
+	if e.balance < profile.Cost*int(count) { // если баланс меньше стоимости шахтера
 		e.mu.Unlock()
-		return internal.MinerState{}, ErrNotEnoughCoal
+		return nil, ErrNotEnoughCoal
 	}
 
-	e.balance -= profile.Cost // успешная покупка выбранного майнера
-	e.nextID++                // дается следующий айди
+	miners := make([]*internal.MinerState, 0, int(count))
+	for i := 0; i < int(count); i++ {
+		e.balance -= profile.Cost // успешная покупка выбранного майнера
+		e.nextID++                // дается следующий айди
 
-	state := &internal.MinerState{ // генерация статов купленного майнера
-		ID:            e.nextID,
-		Class:         class,
-		Energy:        profile.Energy,
-		IsWorking:     true,
-		CoalPerMining: profile.CoalPerMine,
+		state := &internal.MinerState{ // генерация статов купленного майнера
+			ID:            e.nextID,
+			Class:         class,
+			Energy:        profile.Energy,
+			IsWorking:     true,
+			CoalPerMining: profile.CoalPerMine,
+		}
+		miners = append(miners, state)
+
+		e.activeMiners[state.ID] = state // добавить нового шахтера в активных майнеров
+		e.hiredStats[class]++            // увеличить счетчик сколько всего нанято шахтеров
 	}
-
-	e.activeMiners[state.ID] = state // добавить нового шахтера в активных майнеров
-	e.hiredStats[class]++            // увеличить счетчик сколько всего нанято шахтеров
 	e.mu.Unlock()
 
-	e.wg.Add(1)
-	go e.runMiner(state.ID, profile) // запустить в горутине майнера с выбранными параметрами
+	for _, m := range miners {
+		e.wg.Add(1)
+		go e.runMiner(m.ID, profile) // запустить в горутине майнера с выбранными параметрами
+	}
 
-	return *state, nil // вернуть данные нанятого шахтёра
+	return miners, nil // вернуть данные нанятого шахтёра
 }
 
 func (e *Enterprise) BuyEquipment(equipmentType internal.EquipmentType) error { // покупка оборудования

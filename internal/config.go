@@ -1,10 +1,10 @@
 package internal
 
-// internal/config (опционально)
-// Константы и настройки проекта (цены, параметры шахтёров, адрес сервера).
+// NOTE: Тут константы и настройки проекта (цены, параметры шахтёров, адрес сервера)
 
 type (
 	MinerClass    string
+	MinersCount   int
 	EquipmentType string
 )
 
