@@ -198,8 +198,49 @@ failed:
 */
 func (h *HTTPHandlers) PurchasedEquipment(w http.ResponseWriter, r *http.Request) {
 	s := h.enterprise.Status()
-	purchased := s.Equipment
-	writeJSON(w, http.StatusOK, purchased)
+	prices := internal.EquipmentPrices()
+	items := make([]EquipmentItemDTO, 0, len(prices))
+	availableTitles := make([]string, 0)
+
+	for eqType, price := range prices {
+		purchased := s.Equipment[eqType]
+		canBuyNow := !purchased && s.Balance >= price
+
+		title := ""
+		switch eqType {
+		case internal.EquipmentPickaxe:
+			title = "Кирка"
+		case internal.EquipmentVentilation:
+			title = "Вентиляция"
+		case internal.EquipmentWagon:
+			title = "Вагонетка"
+		default:
+			title = string(eqType)
+		}
+
+		if canBuyNow {
+			availableTitles = append(availableTitles, title)
+		}
+
+		items = append(items, EquipmentItemDTO{
+			Type:      string(eqType),
+			Title:     title,
+			Price:     price,
+			Purchased: purchased,
+			CanBuyNow: canBuyNow,
+		})
+	}
+
+	hint := "Пока недостаточно угля для покупки нового оборудования."
+	if len(availableTitles) > 0 {
+		hint = "Вы можете купить: " + strings.Join(availableTitles, ", ")
+	}
+
+	writeJSON(w, http.StatusOK, EquipmentResponse{
+		Balance: s.Balance,
+		Items:   items,
+		Hint:    hint,
+	})
 }
 
 /*
@@ -261,7 +302,21 @@ func (h *HTTPHandlers) ShutdownEntp(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, ShutdownResponse{DurationSec: int64(d / time.Second)})
+	b := h.enterprise.Status().Balance
+	msg := "The enterprise run is complete. You can restart the game or close the application."
+	hiredM, purchasedEq := make(map[string]int, 0), make(map[string]bool, 0)
+
+	snap := h.enterprise.Status()
+	for k, v := range snap.HiredStats {
+		hiredM[string(k)] = v
+	}
+	for k, v := range snap.Equipment {
+		purchasedEq[string(k)] = v
+	}
+
+	writeJSON(w, http.StatusOK, ShutdownResponse{DurationSec: int64(d / time.Second),
+		FinalBalance: b, HiredMiners: hiredM, PurchasedEquipment: purchasedEq, Message: msg,
+	})
 }
 
 func (h *HTTPHandlers) AppClose(w http.ResponseWriter, _ *http.Request) {
