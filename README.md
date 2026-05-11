@@ -1,6 +1,6 @@
 # Miners REST API
 
-**_управляемая симуляция угольного предприятия на Go_**
+**_Управляемая симуляция угольного предприятия на Go_**
 
 <p align="center">
   <img src="https://img.shields.io/badge/Go-1.25-00ADD8?style=for-the-badge&logo=go&logoColor=FFFFFF&labelColor=172018" alt="Go 1.25" />
