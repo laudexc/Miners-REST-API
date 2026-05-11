@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Miners REST API</title>
+    <link rel="stylesheet" href="/styles.css">
+  </head>
+  <body>
+    <main class="app-shell">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">Coal enterprise control panel</p>
+          <h1>Miners REST API</h1>
+        </div>
+        <nav class="toplinks" aria-label="Monitoring links">
+          <a href="/metrics" target="_blank" rel="noreferrer">Metrics</a>
+          <a href="http://localhost:9090" target="_blank" rel="noreferrer">Prometheus</a>
+          <a href="http://localhost:3000" target="_blank" rel="noreferrer">Grafana</a>
+        </nav>
+      </header>
+
+      <section class="status-grid" aria-label="Enterprise summary">
+        <article class="metric-card balance-card">
+          <span class="metric-label">Баланс угля</span>
+          <strong id="balance">0</strong>
+          <span class="metric-note">обновляется автоматически</span>
+        </article>
+        <article class="metric-card">
+          <span class="metric-label">Активные шахтеры</span>
+          <strong id="active-count">0</strong>
+          <span class="metric-note">работают прямо сейчас</span>
+        </article>
+        <article class="metric-card">
+          <span class="metric-label">Всего нанято</span>
+          <strong id="hired-total">0</strong>
+          <span class="metric-note" id="hired-breakdown">weak 0 / normal 0 / strong 0</span>
+        </article>
+        <article class="metric-card">
+          <span class="metric-label">Состояние</span>
+          <strong id="run-state">Running</strong>
+          <span class="metric-note" id="last-updated">ожидание данных</span>
+        </article>
+      </section>
+
+      <section class="workspace">
+        <article class="panel control-panel">
+          <div class="panel-heading">
+            <div>
+              <p class="eyebrow">Hire</p>
+              <h2>Нанять шахтеров</h2>
+            </div>
+          </div>
+
+          <form id="hire-form" class="hire-form">
+            <label>
+              Класс
+              <select id="miner-class" name="class">
+                <option value="weak">weak</option>
+                <option value="normal">normal</option>
+                <option value="strong">strong</option>
+              </select>
+            </label>
+            <label>
+              Количество
+              <input id="miner-count" name="count" type="number" min="1" step="1" value="1">
+            </label>
+            <button type="submit">Нанять</button>
+          </form>
+
+          <div id="miner-prices" class="price-grid" aria-live="polite"></div>
+        </article>
+
+        <article class="panel">
+          <div class="panel-heading">
+            <div>
+              <p class="eyebrow">Equipment</p>
+              <h2>Оборудование</h2>
+            </div>
+            <button id="refresh-button" class="secondary-button" type="button">Обновить</button>
+          </div>
+          <div id="equipment-list" class="equipment-list" aria-live="polite"></div>
+        </article>
+      </section>
+
+      <section class="workspace lower">
+        <article class="panel">
+          <div class="panel-heading">
+            <div>
+              <p class="eyebrow">Miners</p>
+              <h2>Активная смена</h2>
+            </div>
+          </div>
+          <div id="active-miners" class="miners-list" aria-live="polite"></div>
+        </article>
+
+        <article class="panel">
+          <div class="panel-heading">
+            <div>
+              <p class="eyebrow">Run</p>
+              <h2>Управление запуском</h2>
+            </div>
+          </div>
+          <p class="panel-copy">Остановка завершает добычу и возвращает финальный отчет. После shutdown баланс не должен продолжать расти.</p>
+          <button id="shutdown-button" class="danger-button" type="button">Остановить предприятие</button>
+          <div id="notifications" class="notifications" aria-live="polite"></div>
+        </article>
+      </section>
+
+      <div id="toast" class="toast" role="status" aria-live="polite"></div>
+    </main>
+
+    <script src="/app.js"></script>
+  </body>
+</html>

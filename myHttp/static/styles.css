@@ -1,0 +1,393 @@
+:root {
+  color-scheme: light;
+  --bg: #f6f7f4;
+  --surface: #ffffff;
+  --surface-strong: #f1f5ec;
+  --text: #172018;
+  --muted: #657060;
+  --line: #dbe2d6;
+  --coal: #202526;
+  --green: #3c7a52;
+  --green-dark: #24543a;
+  --gold: #c18b2f;
+  --red: #b9473d;
+  --shadow: 0 16px 40px rgba(23, 32, 24, 0.09);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  background:
+    linear-gradient(180deg, rgba(60, 122, 82, 0.08), transparent 360px),
+    var(--bg);
+  color: var(--text);
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+button,
+input,
+select {
+  font: inherit;
+}
+
+button,
+select,
+input {
+  border-radius: 8px;
+}
+
+button {
+  border: 0;
+  cursor: pointer;
+  font-weight: 700;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.app-shell {
+  width: min(1180px, calc(100% - 32px));
+  margin: 0 auto;
+  padding: 28px 0 40px;
+}
+
+.topbar {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 24px;
+}
+
+.eyebrow {
+  margin: 0 0 6px;
+  color: var(--green-dark);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+h1,
+h2 {
+  margin: 0;
+  letter-spacing: 0;
+}
+
+h1 {
+  font-size: clamp(30px, 4vw, 54px);
+  line-height: 1;
+}
+
+h2 {
+  font-size: 20px;
+}
+
+.toplinks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.toplinks a,
+.secondary-button {
+  min-height: 38px;
+  padding: 9px 13px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.72);
+  color: var(--text);
+  text-decoration: none;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.status-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.metric-card,
+.panel {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.88);
+  box-shadow: var(--shadow);
+}
+
+.metric-card {
+  min-height: 132px;
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+
+.balance-card {
+  background: linear-gradient(135deg, var(--coal), #39413d);
+  color: #ffffff;
+}
+
+.metric-label,
+.metric-note {
+  display: block;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.balance-card .metric-label,
+.balance-card .metric-note {
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.metric-card strong {
+  display: block;
+  font-size: 38px;
+  line-height: 1;
+}
+
+.workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.lower {
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr);
+}
+
+.panel {
+  min-height: 280px;
+  padding: 20px;
+}
+
+.panel-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+.panel-copy {
+  margin: 0 0 18px;
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+.hire-form {
+  display: grid;
+  grid-template-columns: 1fr 0.72fr auto;
+  gap: 10px;
+  align-items: end;
+  margin-bottom: 18px;
+}
+
+label {
+  display: grid;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+select,
+input {
+  width: 100%;
+  min-height: 44px;
+  border: 1px solid var(--line);
+  background: #fff;
+  color: var(--text);
+  padding: 0 12px;
+}
+
+.hire-form button,
+.danger-button {
+  min-height: 44px;
+  padding: 0 18px;
+  background: var(--green);
+  color: #fff;
+}
+
+.danger-button {
+  width: 100%;
+  background: var(--red);
+}
+
+.price-grid {
+  display: grid;
+  gap: 8px;
+}
+
+.price-row,
+.equipment-item,
+.miner-row,
+.notification {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-strong);
+}
+
+.price-row {
+  display: grid;
+  grid-template-columns: 0.7fr 1fr;
+  gap: 10px;
+  padding: 11px 12px;
+}
+
+.price-row strong,
+.equipment-item strong,
+.miner-row strong {
+  display: block;
+}
+
+.price-row span,
+.equipment-item span,
+.miner-row span {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.equipment-list,
+.miners-list,
+.notifications {
+  display: grid;
+  gap: 10px;
+}
+
+.equipment-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 14px;
+  align-items: center;
+  padding: 14px;
+}
+
+.equipment-item button {
+  min-height: 38px;
+  padding: 0 13px;
+  background: var(--coal);
+  color: #fff;
+}
+
+.equipment-item.purchased {
+  background: #edf6ee;
+  border-color: #b9d7be;
+}
+
+.equipment-item.locked button {
+  background: #9ba39a;
+}
+
+.miners-list {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.miner-row {
+  padding: 13px;
+}
+
+.miner-meta {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 26px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: #ffffff;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.empty-state {
+  padding: 22px;
+  border: 1px dashed var(--line);
+  border-radius: 8px;
+  color: var(--muted);
+  text-align: center;
+}
+
+.notification {
+  padding: 12px;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.toast {
+  position: fixed;
+  right: 18px;
+  bottom: 18px;
+  max-width: min(420px, calc(100vw - 36px));
+  padding: 13px 15px;
+  border-radius: 8px;
+  background: var(--coal);
+  color: #fff;
+  box-shadow: var(--shadow);
+  opacity: 0;
+  transform: translateY(10px);
+  pointer-events: none;
+  transition: opacity 160ms ease, transform 160ms ease;
+}
+
+.toast.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.toast.error {
+  background: var(--red);
+}
+
+@media (max-width: 900px) {
+  .topbar,
+  .workspace,
+  .lower {
+    grid-template-columns: 1fr;
+  }
+
+  .topbar {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .status-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 620px) {
+  .app-shell {
+    width: min(100% - 20px, 1180px);
+    padding-top: 18px;
+  }
+
+  .status-grid,
+  .hire-form,
+  .miners-list {
+    grid-template-columns: 1fr;
+  }
+
+  .equipment-item {
+    grid-template-columns: 1fr;
+  }
+
+  .equipment-item button {
+    width: 100%;
+  }
+}

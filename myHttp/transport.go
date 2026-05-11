@@ -54,6 +54,8 @@ func (h *HTTPHandlers) RegisterRoutes(r *mux.Router) {
 
 	//    NOTE: - Можно отравить запрос на завершение работы приложения
 	r.HandleFunc("/app/close", h.AppClose).Methods(http.MethodPut)
+
+	r.PathPrefix("/").Handler(webHandler()).Methods(http.MethodGet)
 }
 
 /*
