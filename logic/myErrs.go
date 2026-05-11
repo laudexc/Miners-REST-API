@@ -11,4 +11,5 @@ var (
 	ErrUnknownEquipmentType = errors.New("unknown equipment type")
 	ErrNotEnoughCoal        = errors.New("not enough coal")
 	ErrEquipmentBought      = errors.New("equipment already bought")
+	ErrActiveMinerLimit     = errors.New("active miner limit reached")
 )

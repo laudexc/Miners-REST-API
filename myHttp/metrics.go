@@ -144,10 +144,10 @@ func (c *enterpriseCollector) Describe(ch chan<- *prometheus.Desc) {
 }
 
 func (c *enterpriseCollector) Collect(ch chan<- prometheus.Metric) {
-	snapshot := c.enterprise.Status()
+	snapshot := c.enterprise.Summary()
 
 	ch <- prometheus.MustNewConstMetric(c.balance, prometheus.GaugeValue, float64(snapshot.Balance))
-	ch <- prometheus.MustNewConstMetric(c.activeMiners, prometheus.GaugeValue, float64(len(snapshot.ActiveMiners)))
+	ch <- prometheus.MustNewConstMetric(c.activeMiners, prometheus.GaugeValue, float64(snapshot.ActiveCount))
 	ch <- prometheus.MustNewConstMetric(c.notifications, prometheus.GaugeValue, float64(len(snapshot.Notifications)))
 
 	for _, class := range []internal.MinerClass{internal.WeakClass, internal.NormalClass, internal.StrongClass} {

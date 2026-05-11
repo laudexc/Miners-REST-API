@@ -25,6 +25,15 @@ type (
 		Notifications []string        `json:"notifications"`
 	}
 
+	EnterpriseSummaryResponse struct {
+		Balance       int             `json:"balance"`
+		ActiveCount   int             `json:"active_count"`
+		HiredStats    map[string]int  `json:"hired_stats"`
+		Equipment     map[string]bool `json:"equipment"`
+		Notifications []string        `json:"notifications"`
+		IsShutdown    bool            `json:"is_shutdown"`
+	}
+
 	BuyEquipmentResponse struct {
 		Type string `json:"type"`
 		Ok   bool   `json:"ok"`

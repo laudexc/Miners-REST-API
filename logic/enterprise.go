@@ -9,6 +9,8 @@ import (
 	"time"
 )
 
+const MaxActiveMiners = 5000
+
 type Enterprise struct {
 	mu sync.RWMutex
 
@@ -57,9 +59,22 @@ func (e *Enterprise) Start() error { // старт базовой компани
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
-	if e.isStarted {
+	if e.isStarted && !e.isShutdown {
 		return ErrAlreadyStarted
 	}
+
+	e.balance = 0
+	e.activeMiners = make(map[int]*internal.MinerState)
+	e.hiredStats = make(map[internal.MinerClass]int)
+	e.equipment = make(map[internal.EquipmentType]bool)
+	for equipmentType := range internal.EquipmentPrices() {
+		e.equipment[equipmentType] = false
+	}
+	e.incomeCh = make(chan int)
+	e.nextID = 0
+	e.nextNotifyBalance = e.notifyStep
+	e.notifications = make([]string, 0)
+	e.isShutdown = false
 
 	e.ctx, e.cancel = context.WithCancel(context.Background()) // добавить контекст с отменой
 	e.startedAt = time.Now()
@@ -97,6 +112,10 @@ func (e *Enterprise) HireMiner(class internal.MinerClass, count internal.MinersC
 	if e.balance < profile.Cost*int(count) { // если баланс меньше стоимости шахтера
 		e.mu.Unlock()
 		return nil, ErrNotEnoughCoal
+	}
+	if len(e.activeMiners)+int(count) > MaxActiveMiners {
+		e.mu.Unlock()
+		return nil, ErrActiveMinerLimit
 	}
 
 	miners := make([]*internal.MinerState, 0, int(count))
@@ -212,6 +231,51 @@ func (e *Enterprise) Status() internal.EnterpriseSnapshot { // статус пр
 	}
 }
 
+func (e *Enterprise) Summary() internal.EnterpriseSummarySnapshot {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+
+	hired := make(map[internal.MinerClass]int, len(e.hiredStats))
+	for class, count := range e.hiredStats {
+		hired[class] = count
+	}
+
+	equipment := make(map[internal.EquipmentType]bool, len(e.equipment))
+	for eq, bought := range e.equipment {
+		equipment[eq] = bought
+	}
+
+	notifications := append([]string(nil), e.notifications...)
+
+	return internal.EnterpriseSummarySnapshot{
+		Balance:       e.balance,
+		ActiveCount:   len(e.activeMiners),
+		HiredStats:    hired,
+		Equipment:     equipment,
+		Notifications: notifications,
+		IsShutdown:    e.isShutdown,
+	}
+}
+
+func (e *Enterprise) ActiveMiners(limit int) []internal.MinerState {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+
+	active := make([]internal.MinerState, 0, len(e.activeMiners))
+	for _, miner := range e.activeMiners {
+		active = append(active, *miner)
+	}
+	slices.SortFunc(active, func(a, b internal.MinerState) int {
+		return a.ID - b.ID
+	})
+
+	if limit > 0 && len(active) > limit {
+		return active[:limit]
+	}
+
+	return active
+}
+
 func (e *Enterprise) Shutdown() (time.Duration, error) { // завершение всех процессов
 	e.mu.Lock()
 	if !e.isStarted { // если ничего и не было запущено, то ошибка
@@ -272,7 +336,6 @@ func (e *Enterprise) incomeAggregator() { // постоянно читает к�
 			e.balance += amount // добавляем в баланс это число
 			for e.balance >= e.nextNotifyBalance {
 				str := fmt.Sprintf("На балансе есть как минимум %d угля", e.nextNotifyBalance)
-				fmt.Println(str)
 				e.nextNotifyBalance += e.notifyStep // уведомление и том сколько есть угля
 
 				e.notifications = append(e.notifications, str)

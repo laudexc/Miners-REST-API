@@ -4,6 +4,10 @@ const state = {
   toastTimer: null,
 };
 
+const minerClassOrder = ["weak", "normal", "strong"];
+const equipmentOrder = ["pickaxe", "ventilation", "wagon"];
+const activePreviewLimit = 60;
+
 const elements = {
   balance: document.querySelector("#balance"),
   activeCount: document.querySelector("#active-count"),
@@ -71,7 +75,9 @@ function equipmentTitle(type) {
 }
 
 function renderPrices() {
-  const entries = Object.entries(state.prices);
+  const entries = minerClassOrder
+    .filter((className) => state.prices[className])
+    .map((className) => [className, state.prices[className]]);
   if (entries.length === 0) {
     elements.minerPrices.innerHTML = '<div class="empty-state">Цены шахтеров загружаются</div>';
     return;
@@ -97,23 +103,25 @@ function renderStatus(status) {
   const total = weak + normal + strong;
 
   elements.balance.textContent = formatNumber(status.balance);
-  elements.activeCount.textContent = formatNumber(status.active_miners?.length || 0);
+  elements.activeCount.textContent = formatNumber(status.active_count || 0);
   elements.hiredTotal.textContent = formatNumber(total);
   elements.hiredBreakdown.textContent = `weak ${weak} / normal ${normal} / strong ${strong}`;
+  state.stopped = state.stopped || Boolean(status.is_shutdown);
   elements.runState.textContent = state.stopped ? "Stopped" : "Running";
   elements.lastUpdated.textContent = new Date().toLocaleTimeString("ru-RU");
 
-  renderActiveMiners(status.active_miners || []);
+  renderActiveMiners(status.active_preview || [], status.active_count || 0);
   renderNotifications(status.notifications || []);
 }
 
-function renderActiveMiners(miners) {
+function renderActiveMiners(miners, total) {
   if (miners.length === 0) {
     elements.activeMiners.innerHTML = '<div class="empty-state">Активных шахтеров пока нет</div>';
     return;
   }
 
-  elements.activeMiners.innerHTML = miners
+  const hiddenCount = Math.max(0, total - miners.length);
+  const rows = miners
     .map((miner) => {
       return `
         <div class="miner-row">
@@ -127,6 +135,12 @@ function renderActiveMiners(miners) {
       `;
     })
     .join("");
+
+  const hiddenMessage = hiddenCount > 0
+    ? `<div class="empty-state">Показаны первые ${miners.length} из ${formatNumber(total)} активных шахтеров</div>`
+    : "";
+
+  elements.activeMiners.innerHTML = rows + hiddenMessage;
 }
 
 function renderNotifications(notifications) {
@@ -143,7 +157,9 @@ function renderNotifications(notifications) {
 }
 
 function renderEquipment(data) {
-  const items = data.items || [];
+  const items = (data.items || []).slice().sort((a, b) => {
+    return equipmentOrder.indexOf(a.type) - equipmentOrder.indexOf(b.type);
+  });
   if (items.length === 0) {
     elements.equipmentList.innerHTML = '<div class="empty-state">Оборудование загружается</div>';
     return;
@@ -170,11 +186,12 @@ function renderEquipment(data) {
 
 async function refreshAll() {
   try {
-    const [status, equipment] = await Promise.all([
-      requestJSON("/enterprise/status"),
+    const [summary, active, equipment] = await Promise.all([
+      requestJSON("/enterprise/summary"),
+      requestJSON(`/miners/active?limit=${activePreviewLimit}`),
       requestJSON("/equipment"),
     ]);
-    renderStatus(status);
+    renderStatus({ ...summary, active_preview: active });
     renderEquipment(equipment);
   } catch (error) {
     showToast(error.message, "error");

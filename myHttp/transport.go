@@ -48,6 +48,7 @@ func (h *HTTPHandlers) RegisterRoutes(r *mux.Router) {
 
 	// - Предприятие:
 	//    NOTE: - Можно получить промежуточную информацию (текущий баланс, сколько каких шахтёров было нанято за всё время, и тд, по желанию)
+	r.HandleFunc("/enterprise/summary", h.SummaryEntp).Methods(http.MethodGet)
 	r.HandleFunc("/enterprise/status", h.StatusEntp).Methods(http.MethodGet)
 	//    NOTE: - Можно отправить запрос на завершение игры
 	r.HandleFunc("/enterprise/shutdown", h.ShutdownEntp).Methods(http.MethodPost)
@@ -142,7 +143,17 @@ failed:
 */
 func (h *HTTPHandlers) ListOfActive(w http.ResponseWriter, r *http.Request) {
 	class := r.URL.Query().Get("class")
-	active := h.enterprise.Status().ActiveMiners
+	limit := 0
+	if limitStr := r.URL.Query().Get("limit"); limitStr != "" {
+		parsedLimit, err := strconv.Atoi(limitStr)
+		if err != nil {
+			writeErr(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		limit = parsedLimit
+	}
+
+	active := h.enterprise.ActiveMiners(limit)
 	list := make([]internal.MinerState, 0, len(active))
 
 	for _, m := range active {
@@ -292,6 +303,29 @@ func (h *HTTPHandlers) StatusEntp(w http.ResponseWriter, r *http.Request) {
 
 	writeJSON(w, http.StatusOK, EnterpriseStatusResponse{
 		Balance: snapshot.Balance, ActiveMiners: active, HiredStats: hired, Equipment: eq, Notifications: snapshot.Notifications,
+	})
+}
+
+func (h *HTTPHandlers) SummaryEntp(w http.ResponseWriter, r *http.Request) {
+	snapshot := h.enterprise.Summary()
+
+	hired := make(map[string]int, len(snapshot.HiredStats))
+	for k, v := range snapshot.HiredStats {
+		hired[string(k)] = v
+	}
+
+	eq := make(map[string]bool, len(snapshot.Equipment))
+	for k, v := range snapshot.Equipment {
+		eq[string(k)] = v
+	}
+
+	writeJSON(w, http.StatusOK, EnterpriseSummaryResponse{
+		Balance:       snapshot.Balance,
+		ActiveCount:   snapshot.ActiveCount,
+		HiredStats:    hired,
+		Equipment:     eq,
+		Notifications: snapshot.Notifications,
+		IsShutdown:    snapshot.IsShutdown,
 	})
 }
 
