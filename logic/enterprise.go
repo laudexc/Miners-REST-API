@@ -164,6 +164,10 @@ func (e *Enterprise) AddCoal(amount int) error { // положить уголь 
 		e.mu.RUnlock()
 		return ErrNotStarted
 	}
+	if e.isShutdown {
+		e.mu.RUnlock()
+		return ErrAlreadyStopped
+	}
 	ctx := e.ctx // получить снимок контекста из структуры, чтобы не напороться на гонку данных
 	e.mu.RUnlock()
 
@@ -261,6 +265,10 @@ func (e *Enterprise) incomeAggregator() { // постоянно читает к�
 
 		case amount := <-e.incomeCh: // берём число угля из общего канала дохода
 			e.mu.Lock()
+			if e.isShutdown {
+				e.mu.Unlock()
+				continue
+			}
 			e.balance += amount // добавляем в баланс это число
 			for e.balance >= e.nextNotifyBalance {
 				str := fmt.Sprintf("На балансе есть как минимум %d угля", e.nextNotifyBalance)

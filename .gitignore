@@ -1,3 +1,18 @@
 .vscode
 .zed
 .gocache
+
+# Local environment
+.env
+.env.*
+
+# Go build/test artifacts
+*.exe
+*.test
+*.out
+coverage.*
+
+# Logs and temp files
+*.log
+tmp/
+temp/

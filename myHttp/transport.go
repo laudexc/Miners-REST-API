@@ -14,11 +14,22 @@ import (
 )
 
 // NOTE: Тут все HTTP-обработчики, роутинг, валидация входных данных, маппинг ошибок в HTTP-ответы.
-type HTTPHandlers struct{ enterprise *logic.Enterprise }
+type HTTPHandlers struct {
+	enterprise *logic.Enterprise
+	metrics    *Metrics
+}
 
-func NewHTTPHandlers(Entp *logic.Enterprise) *HTTPHandlers { return &HTTPHandlers{enterprise: Entp} }
+func NewHTTPHandlers(Entp *logic.Enterprise) *HTTPHandlers {
+	return &HTTPHandlers{
+		enterprise: Entp,
+		metrics:    NewMetrics(Entp),
+	}
+}
 
 func (h *HTTPHandlers) RegisterRoutes(r *mux.Router) {
+	r.Use(h.metrics.HTTPMiddleware)
+	r.Handle("/metrics", h.metrics.Handler()).Methods(http.MethodGet)
+
 	// - Шахтёры:
 	//    NOTE: - Можно получить информацию о требуемом размере оплаты труда для каждого класса шахтёров
 	r.HandleFunc("/miners/prices", h.MinersSalary).Methods(http.MethodGet)
