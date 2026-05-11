@@ -18,11 +18,10 @@ type (
 	}
 
 	EnterpriseStatusResponse struct {
-		Balance       int             `json:"balance"`
-		ActiveMiners  []MinerDTO      `json:"active_miners"`
-		HiredStats    map[string]int  `json:"hired_stats"`
-		Equipment     map[string]bool `json:"equipment"`
-		Notifications []string        `json:"notifications"`
+		Balance      int             `json:"balance"`
+		ActiveMiners []MinerDTO      `json:"active_miners"`
+		HiredStats   map[string]int  `json:"hired_stats"`
+		Equipment    map[string]bool `json:"equipment"`
 	}
 
 	EnterpriseSummaryResponse struct {
@@ -30,7 +29,11 @@ type (
 		ActiveCount   int             `json:"active_count"`
 		HiredStats    map[string]int  `json:"hired_stats"`
 		Equipment     map[string]bool `json:"equipment"`
-		Notifications []string        `json:"notifications"`
+		GoalProgress  int             `json:"goal_progress"`
+		GoalTotal     int             `json:"goal_total"`
+		GoalComplete  bool            `json:"goal_complete"`
+		NextGoalTitle string          `json:"next_goal_title"`
+		NextGoalPrice int             `json:"next_goal_price"`
 		IsShutdown    bool            `json:"is_shutdown"`
 	}
 
@@ -40,11 +43,14 @@ type (
 	}
 
 	EquipmentItemDTO struct {
-		Type      string `json:"type"`
-		Title     string `json:"title"`
-		Price     int    `json:"price"`
-		Purchased bool   `json:"purchased"`
-		CanBuyNow bool   `json:"can_buy_now"`
+		Type        string `json:"type"`
+		Title       string `json:"title"`
+		Description string `json:"description"`
+		Price       int    `json:"price"`
+		Order       int    `json:"order"`
+		Purchased   bool   `json:"purchased"`
+		CanBuyNow   bool   `json:"can_buy_now"`
+		IsNextGoal  bool   `json:"is_next_goal"`
 	}
 
 	EquipmentResponse struct {

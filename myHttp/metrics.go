@@ -75,6 +75,12 @@ func (w *statusResponseWriter) WriteHeader(code int) {
 	w.ResponseWriter.WriteHeader(code)
 }
 
+func (w *statusResponseWriter) Flush() {
+	if flusher, ok := w.ResponseWriter.(http.Flusher); ok {
+		flusher.Flush()
+	}
+}
+
 func routePath(r *http.Request) string {
 	route := mux.CurrentRoute(r)
 	if route == nil {
@@ -92,11 +98,10 @@ func routePath(r *http.Request) string {
 type enterpriseCollector struct {
 	enterprise *logic.Enterprise
 
-	balance       *prometheus.Desc
-	activeMiners  *prometheus.Desc
-	hiredMiners   *prometheus.Desc
-	equipment     *prometheus.Desc
-	notifications *prometheus.Desc
+	balance      *prometheus.Desc
+	activeMiners *prometheus.Desc
+	hiredMiners  *prometheus.Desc
+	equipment    *prometheus.Desc
 }
 
 func newEnterpriseCollector(enterprise *logic.Enterprise) prometheus.Collector {
@@ -126,12 +131,6 @@ func newEnterpriseCollector(enterprise *logic.Enterprise) prometheus.Collector {
 			[]string{"type"},
 			nil,
 		),
-		notifications: prometheus.NewDesc(
-			"miners_notifications_total",
-			"Current number of stored enterprise notifications.",
-			nil,
-			nil,
-		),
 	}
 }
 
@@ -140,7 +139,6 @@ func (c *enterpriseCollector) Describe(ch chan<- *prometheus.Desc) {
 	ch <- c.activeMiners
 	ch <- c.hiredMiners
 	ch <- c.equipment
-	ch <- c.notifications
 }
 
 func (c *enterpriseCollector) Collect(ch chan<- prometheus.Metric) {
@@ -148,7 +146,6 @@ func (c *enterpriseCollector) Collect(ch chan<- prometheus.Metric) {
 
 	ch <- prometheus.MustNewConstMetric(c.balance, prometheus.GaugeValue, float64(snapshot.Balance))
 	ch <- prometheus.MustNewConstMetric(c.activeMiners, prometheus.GaugeValue, float64(snapshot.ActiveCount))
-	ch <- prometheus.MustNewConstMetric(c.notifications, prometheus.GaugeValue, float64(len(snapshot.Notifications)))
 
 	for _, class := range []internal.MinerClass{internal.WeakClass, internal.NormalClass, internal.StrongClass} {
 		ch <- prometheus.MustNewConstMetric(
@@ -159,7 +156,7 @@ func (c *enterpriseCollector) Collect(ch chan<- prometheus.Metric) {
 		)
 	}
 
-	for _, equipmentType := range []internal.EquipmentType{internal.EquipmentPickaxe, internal.EquipmentVentilation, internal.EquipmentWagon} {
+	for _, equipmentType := range internal.EquipmentTypes() {
 		value := 0.0
 		if snapshot.Equipment[equipmentType] {
 			value = 1

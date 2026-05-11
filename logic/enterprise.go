@@ -2,24 +2,35 @@ package logic
 
 import (
 	"context"
-	"fmt"
 	"prj2/internal"
-	"slices"
 	"sync"
 	"time"
 )
 
-const MaxActiveMiners = 5000
+const (
+	MaxActiveMiners = 1_000_000
+	MaxHirePreview  = 100
+)
+
+type minerCohort struct {
+	StartID       int
+	Count         int
+	Class         internal.MinerClass
+	Energy        int
+	CoalPerMining int
+	MineIndex     int
+	NextMineAt    time.Time
+	Interval      time.Duration
+}
 
 type Enterprise struct {
 	mu sync.RWMutex
 
 	balance      int
-	activeMiners map[int]*internal.MinerState    // все работающие майнеры
-	hiredStats   map[internal.MinerClass]int     // статы всех нанятых майнеров
-	equipment    map[internal.EquipmentType]bool // купленное оборудование
-
-	incomeCh chan int // канал в который идет прибыль
+	activeMiners int
+	cohorts      []minerCohort
+	hiredStats   map[internal.MinerClass]int
+	equipment    map[internal.EquipmentType]bool
 
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -29,33 +40,19 @@ type Enterprise struct {
 	isStarted  bool
 	isShutdown bool
 	nextID     int
-
-	notifyStep        int
-	nextNotifyBalance int
-	notifications     []string
 }
 
 func NewEnterprise() *Enterprise {
-	e := &Enterprise{ // создание компании
-		activeMiners: make(map[int]*internal.MinerState),
-		hiredStats:   make(map[internal.MinerClass]int),
-		equipment:    make(map[internal.EquipmentType]bool),
-		incomeCh:     make(chan int),
-
-		notifyStep:        250,
-		nextNotifyBalance: 250,
-		notifications:     make([]string, 0),
+	e := &Enterprise{
+		hiredStats: make(map[internal.MinerClass]int),
+		equipment:  make(map[internal.EquipmentType]bool),
 	}
-
-	for equipmentType := range internal.EquipmentPrices() {
-		// все купленное оборудование инициализируется как false
-		e.equipment[equipmentType] = false
-	}
+	e.resetStateLocked()
 
 	return e
 }
 
-func (e *Enterprise) Start() error { // старт базовой компании с добычей 1 уголь/c
+func (e *Enterprise) Start() error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
@@ -63,90 +60,76 @@ func (e *Enterprise) Start() error { // старт базовой компани
 		return ErrAlreadyStarted
 	}
 
-	e.balance = 0
-	e.activeMiners = make(map[int]*internal.MinerState)
-	e.hiredStats = make(map[internal.MinerClass]int)
-	e.equipment = make(map[internal.EquipmentType]bool)
-	for equipmentType := range internal.EquipmentPrices() {
-		e.equipment[equipmentType] = false
-	}
-	e.incomeCh = make(chan int)
-	e.nextID = 0
-	e.nextNotifyBalance = e.notifyStep
-	e.notifications = make([]string, 0)
-	e.isShutdown = false
-
-	e.ctx, e.cancel = context.WithCancel(context.Background()) // добавить контекст с отменой
+	e.resetStateLocked()
+	e.ctx, e.cancel = context.WithCancel(context.Background())
 	e.startedAt = time.Now()
 	e.isStarted = true
+	e.isShutdown = false
 
 	e.wg.Add(1)
-	go e.incomeAggregator() // incomeAggregator постоянно читает incomeCh в который кидают уголь и прибавляет в balance
-
-	e.wg.Add(1)
-	go e.passiveIncomeLoop() // запустить пассивную добычу
+	go e.simulationLoop(e.ctx)
 
 	return nil
 }
 
-func (e *Enterprise) HireMiner(class internal.MinerClass, count internal.MinersCount) ([]*internal.MinerState, error) { // нанять майнера
-	profile, ok := internal.MinerProfiles()[class] // internal.MinerProfiles() возвращает map[MinerClass]MinerProfile
-	// Дальше [class] берёт профиль по ключу (классу шахтёра)
+func (e *Enterprise) HireMiner(class internal.MinerClass, count internal.MinersCount) ([]*internal.MinerState, error) {
+	profile, ok := internal.MinerProfiles()[class]
 	if !ok {
 		return nil, ErrUnknownMinerClass
 	}
 
 	e.mu.Lock()
-	if int(count) < 1 { // если передано количество майнеров для найма < 1
-		e.mu.Unlock()
+	defer e.mu.Unlock()
+
+	if int(count) < 1 {
 		return nil, ErrMinersWrongQuantity
 	}
-	if !e.isStarted { // если майнер не запущен
-		e.mu.Unlock()
+	if !e.isStarted {
 		return nil, ErrNotStarted
 	}
-	if e.isShutdown { // если все завершено
-		e.mu.Unlock()
+	if e.isShutdown {
 		return nil, ErrAlreadyStopped
 	}
-	if e.balance < profile.Cost*int(count) { // если баланс меньше стоимости шахтера
-		e.mu.Unlock()
+	if e.balance < profile.Cost*int(count) {
 		return nil, ErrNotEnoughCoal
 	}
-	if len(e.activeMiners)+int(count) > MaxActiveMiners {
-		e.mu.Unlock()
+	if e.activeMiners+int(count) > MaxActiveMiners {
 		return nil, ErrActiveMinerLimit
 	}
 
-	miners := make([]*internal.MinerState, 0, int(count))
-	for i := 0; i < int(count); i++ {
-		e.balance -= profile.Cost // успешная покупка выбранного майнера
-		e.nextID++                // дается следующий айди
+	startID := e.nextID + 1
+	e.nextID += int(count)
+	e.balance -= profile.Cost * int(count)
+	e.activeMiners += int(count)
+	e.hiredStats[class] += int(count)
 
-		state := &internal.MinerState{ // генерация статов купленного майнера
-			ID:            e.nextID,
+	e.cohorts = append(e.cohorts, minerCohort{
+		StartID:       startID,
+		Count:         int(count),
+		Class:         class,
+		Energy:        profile.Energy,
+		CoalPerMining: profile.CoalPerMine,
+		NextMineAt:    time.Now().Add(time.Duration(profile.IntervalSec) * time.Second),
+		Interval:      time.Duration(profile.IntervalSec) * time.Second,
+	})
+
+	previewCount := min(int(count), MaxHirePreview)
+	miners := make([]*internal.MinerState, 0, previewCount)
+	for i := 0; i < previewCount; i++ {
+		miners = append(miners, &internal.MinerState{
+			ID:            startID + i,
 			Class:         class,
 			Energy:        profile.Energy,
 			IsWorking:     true,
 			CoalPerMining: profile.CoalPerMine,
-		}
-		miners = append(miners, state)
-
-		e.activeMiners[state.ID] = state // добавить нового шахтера в активных майнеров
-		e.hiredStats[class]++            // увеличить счетчик сколько всего нанято шахтеров
-	}
-	e.mu.Unlock()
-
-	for _, m := range miners {
-		e.wg.Add(1)
-		go e.runMiner(m.ID, profile) // запустить в горутине майнера с выбранными параметрами
+		})
 	}
 
-	return miners, nil // вернуть данные нанятого шахтёра
+	return miners, nil
 }
 
-func (e *Enterprise) BuyEquipment(equipmentType internal.EquipmentType) error { // покупка оборудования
-	price, ok := internal.EquipmentPrices()[equipmentType] // EquipmentPrices() возращает мапу и дальше через ключ [equipmentType] поиск цены
+func (e *Enterprise) BuyEquipment(equipmentType internal.EquipmentType) error {
+	profile, ok := internal.EquipmentProfileByType(equipmentType)
 	if !ok {
 		return ErrUnknownEquipmentType
 	}
@@ -154,80 +137,55 @@ func (e *Enterprise) BuyEquipment(equipmentType internal.EquipmentType) error { 
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
-	if !e.isStarted { // если не работает
+	if !e.isStarted {
 		return ErrNotStarted
 	}
-	if e.isShutdown { // если завершена работа
+	if e.isShutdown {
 		return ErrAlreadyStopped
 	}
-	if e.equipment[equipmentType] { // если оборудование уже куплено
+	if e.equipment[equipmentType] {
 		return ErrEquipmentBought
 	}
-	if e.balance < price { // если не хватает денег на балансе для покупки
+	nextGoal, ok := internal.NextEquipmentGoal(e.equipment)
+	if ok && nextGoal.Type != equipmentType {
+		return ErrEquipmentLocked
+	}
+	if e.balance < profile.Price {
 		return ErrNotEnoughCoal
 	}
 
-	e.balance -= price                // списание денег
-	e.equipment[equipmentType] = true // метка, что такое то оборудование куплено
+	e.balance -= profile.Price
+	e.equipment[equipmentType] = true
 
 	return nil
 }
 
-func (e *Enterprise) AddCoal(amount int) error { // положить уголь в канал
-	if amount <= 0 { // если ничего не пришло, или пришло некорректное количество угля
+func (e *Enterprise) AddCoal(amount int) error {
+	if amount <= 0 {
 		return nil
 	}
 
-	e.mu.RLock()
-	if !e.isStarted { // если не работает предприятие
-		e.mu.RUnlock()
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	if !e.isStarted {
 		return ErrNotStarted
 	}
 	if e.isShutdown {
-		e.mu.RUnlock()
 		return ErrAlreadyStopped
 	}
-	ctx := e.ctx // получить снимок контекста из структуры, чтобы не напороться на гонку данных
-	e.mu.RUnlock()
 
-	select {
-	case <-ctx.Done():
-		return ErrAlreadyStopped
-	case e.incomeCh <- amount: // положить в канал уголь
-		return nil
-	}
+	e.addCoalLocked(amount)
+	return nil
 }
 
-func (e *Enterprise) Status() internal.EnterpriseSnapshot { // статус предприятия
-	e.mu.RLock()
-	defer e.mu.RUnlock()
-
-	active := make([]internal.MinerState, 0, len(e.activeMiners)) // сделать снимок количества активных майнеров
-	for _, miner := range e.activeMiners {                        // пройтись по активным майнерам
-		active = append(active, *miner) // добавить майнеров в новый слайс
-	}
-	slices.SortFunc(active, func(a, b internal.MinerState) int { // отсортировать их по айди
-		return a.ID - b.ID
-	})
-
-	hired := make(map[internal.MinerClass]int, len(e.hiredStats)) // сделать снимок сколько всего нанято майнеров
-	for class, count := range e.hiredStats {                      // пройтись по всем работникам
-		hired[class] = count // скопировать их классы и количество в новую мапу
-	}
-
-	equipment := make(map[internal.EquipmentType]bool, len(e.equipment)) // сделать снимок сколько и какое оборудование куплено
-	for eq, bought := range e.equipment {                                // пройтись по всему оборудованию на предприятии и добавить в новую мапу
-		equipment[eq] = bought
-	}
-
-	notifications := append([]string(nil), e.notifications...) // все последние уведомления
-
-	return internal.EnterpriseSnapshot{ // вернуть снимок запрашиваемых данных
-		Balance:       e.balance,
-		ActiveMiners:  active,
-		HiredStats:    hired,
-		Equipment:     equipment,
-		Notifications: notifications,
+func (e *Enterprise) Status() internal.EnterpriseSnapshot {
+	summary := e.Summary()
+	return internal.EnterpriseSnapshot{
+		Balance:      summary.Balance,
+		ActiveMiners: e.ActiveMiners(0),
+		HiredStats:   summary.HiredStats,
+		Equipment:    summary.Equipment,
 	}
 }
 
@@ -235,25 +193,12 @@ func (e *Enterprise) Summary() internal.EnterpriseSummarySnapshot {
 	e.mu.RLock()
 	defer e.mu.RUnlock()
 
-	hired := make(map[internal.MinerClass]int, len(e.hiredStats))
-	for class, count := range e.hiredStats {
-		hired[class] = count
-	}
-
-	equipment := make(map[internal.EquipmentType]bool, len(e.equipment))
-	for eq, bought := range e.equipment {
-		equipment[eq] = bought
-	}
-
-	notifications := append([]string(nil), e.notifications...)
-
 	return internal.EnterpriseSummarySnapshot{
-		Balance:       e.balance,
-		ActiveCount:   len(e.activeMiners),
-		HiredStats:    hired,
-		Equipment:     equipment,
-		Notifications: notifications,
-		IsShutdown:    e.isShutdown,
+		Balance:     e.balance,
+		ActiveCount: e.activeMiners,
+		HiredStats:  copyHiredStats(e.hiredStats),
+		Equipment:   copyEquipment(e.equipment),
+		IsShutdown:  e.isShutdown,
 	}
 }
 
@@ -261,146 +206,132 @@ func (e *Enterprise) ActiveMiners(limit int) []internal.MinerState {
 	e.mu.RLock()
 	defer e.mu.RUnlock()
 
-	active := make([]internal.MinerState, 0, len(e.activeMiners))
-	for _, miner := range e.activeMiners {
-		active = append(active, *miner)
+	total := e.activeMiners
+	if limit > 0 && total > limit {
+		total = limit
 	}
-	slices.SortFunc(active, func(a, b internal.MinerState) int {
-		return a.ID - b.ID
-	})
 
-	if limit > 0 && len(active) > limit {
-		return active[:limit]
+	active := make([]internal.MinerState, 0, total)
+	for _, cohort := range e.cohorts {
+		for i := 0; i < cohort.Count && (limit <= 0 || len(active) < limit); i++ {
+			active = append(active, internal.MinerState{
+				ID:            cohort.StartID + i,
+				Class:         cohort.Class,
+				Energy:        cohort.Energy,
+				IsWorking:     true,
+				CoalPerMining: cohort.CoalPerMining,
+			})
+		}
+		if limit > 0 && len(active) >= limit {
+			break
+		}
 	}
 
 	return active
 }
 
-func (e *Enterprise) Shutdown() (time.Duration, error) { // завершение всех процессов
+func (e *Enterprise) Shutdown() (time.Duration, error) {
 	e.mu.Lock()
-	if !e.isStarted { // если ничего и не было запущено, то ошибка
+	if !e.isStarted {
 		e.mu.Unlock()
 		return 0, ErrNotStarted
 	}
-	if e.isShutdown { // если уже завершено, завершать нечего
+	if e.isShutdown {
 		e.mu.Unlock()
 		return 0, ErrAlreadyStopped
 	}
 
-	e.isShutdown = true      // метка что завершена работа
-	cancel := e.cancel       // просто копия функции отмены в локальную переменную
-	startedAt := e.startedAt // копия метки времени когда стартовало
+	e.isShutdown = true
+	cancel := e.cancel
+	startedAt := e.startedAt
 	e.mu.Unlock()
 
-	cancel()    // отмена контекста
-	e.wg.Wait() // подождать завершения всех горутин
+	cancel()
+	e.wg.Wait()
 
-	return time.Since(startedAt), nil // сколько предприятие проработало
+	return time.Since(startedAt), nil
 }
 
-func (e *Enterprise) passiveIncomeLoop() { // постоянная добыча +1 без условий
+func (e *Enterprise) simulationLoop(ctx context.Context) {
 	defer e.wg.Done()
 
-	ticker := time.NewTicker(time.Second * 2) // таймер, тикающий каждые 2 секунды пока идет добыча
+	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
 
+	passiveTicks := 0
 	for {
 		select {
-		case <-e.ctx.Done():
+		case <-ctx.Done():
 			return
-		case <-ticker.C: // подожди, пока тикер отправит следующий тик, должны пройти 2 сек
-		}
-
-		select {
-		case <-e.ctx.Done():
-			return
-		case e.incomeCh <- 1: // положить в канал 1 уголь
-		}
-	}
-}
-
-func (e *Enterprise) incomeAggregator() { // постоянно читает канал incomeCh и добавляет уголь в balance
-	defer e.wg.Done()
-
-	for {
-		select {
-		case <-e.ctx.Done(): // если контекст завершен
-			return
-
-		case amount := <-e.incomeCh: // берём число угля из общего канала дохода
+		case now := <-ticker.C:
 			e.mu.Lock()
 			if e.isShutdown {
 				e.mu.Unlock()
 				continue
 			}
-			e.balance += amount // добавляем в баланс это число
-			for e.balance >= e.nextNotifyBalance {
-				str := fmt.Sprintf("На балансе есть как минимум %d угля", e.nextNotifyBalance)
-				e.nextNotifyBalance += e.notifyStep // уведомление и том сколько есть угля
 
-				e.notifications = append(e.notifications, str)
-				if len(e.notifications) > 8 {
-					e.notifications = e.notifications[len(e.notifications)-8:] // оставить самые новые записи
-				}
+			passiveTicks++
+			if passiveTicks%2 == 0 {
+				e.addCoalLocked(1)
 			}
+			e.mineCohortsLocked(now)
 			e.mu.Unlock()
 		}
 	}
 }
 
-// запуск нужного майнера по айди
-func (e *Enterprise) runMiner(minerID int, profile internal.MinerProfile) {
-	defer e.wg.Done()
-
-	ticker := time.NewTicker(time.Duration(profile.IntervalSec) * time.Second) // таймер шахтёра:
-	// как часто он делает одну добычу - 1/2/3 сек в зависимости от класса
-	defer ticker.Stop()
-
-	for mineIdx := 0; mineIdx < profile.Energy; mineIdx++ { // начать копать на сколько хватит энергии
-		select {
-		case <-e.ctx.Done(): // если контекст завершился, то майнер останавливается
-			e.markMinerStopped(minerID)
-			return
-		case <-ticker.C:
+func (e *Enterprise) mineCohortsLocked(now time.Time) {
+	active := e.cohorts[:0]
+	for _, cohort := range e.cohorts {
+		profile := internal.MinerProfiles()[cohort.Class]
+		for cohort.Energy > 0 && !now.Before(cohort.NextMineAt) {
+			yieldPerMiner := profile.CoalPerMine + profile.ProgressStep*cohort.MineIndex
+			cohort.CoalPerMining = yieldPerMiner
+			e.addCoalLocked(yieldPerMiner * cohort.Count)
+			cohort.Energy--
+			cohort.MineIndex++
+			cohort.NextMineAt = cohort.NextMineAt.Add(cohort.Interval)
 		}
 
-		coalYield := profile.CoalPerMine + profile.ProgressStep*mineIdx // добытый уголь = уголь за добычу + прогресс за каждый добытый уголь(у слабого и обычного = 0)
-
-		select {
-		case <-e.ctx.Done():
-			e.markMinerStopped(minerID) // проверка завершения контекста
-			return
-		case e.incomeCh <- coalYield: // положить добытый уголь в канал
-			e.updateMinerAfterMine(minerID, coalYield) // обновить сведения майнера
+		if cohort.Energy > 0 {
+			active = append(active, cohort)
+			continue
 		}
+
+		e.activeMiners -= cohort.Count
 	}
 
-	e.markMinerStopped(minerID) // когда энергия заканчивается - майнер останавливается
+	e.cohorts = active
 }
 
-func (e *Enterprise) updateMinerAfterMine(minerID int, coalYield int) { // обновить сведения о майнере по айди
-	e.mu.Lock()
-	defer e.mu.Unlock()
-
-	miner, ok := e.activeMiners[minerID] // проверить по списку всех майнеров, найти нужного по айди
-	if !ok {
-		return
-	}
-
-	miner.Energy--                  // -1 энергия за копание
-	miner.CoalPerMining = coalYield // это обновление “текущей мощности добычи” шахтёра в состоянии.
-	// Нужно для того, у которого добыча растёт с каждым циклом.
+func (e *Enterprise) addCoalLocked(amount int) {
+	e.balance += amount
 }
 
-func (e *Enterprise) markMinerStopped(minerID int) { // остановить раскопки майнера
-	e.mu.Lock()
-	defer e.mu.Unlock()
-
-	miner, ok := e.activeMiners[minerID] // проверить по списку всех майнеров, найти нужного по айди
-	if !ok {
-		return
+func (e *Enterprise) resetStateLocked() {
+	e.balance = 0
+	e.activeMiners = 0
+	e.cohorts = make([]minerCohort, 0)
+	e.hiredStats = make(map[internal.MinerClass]int)
+	e.equipment = make(map[internal.EquipmentType]bool)
+	for _, equipmentType := range internal.EquipmentTypes() {
+		e.equipment[equipmentType] = false
 	}
+	e.nextID = 0
+}
 
-	miner.IsWorking = false         // поставить метку что майнер не работает
-	delete(e.activeMiners, minerID) // удалить майнера из активных
+func copyHiredStats(src map[internal.MinerClass]int) map[internal.MinerClass]int {
+	dst := make(map[internal.MinerClass]int, len(src))
+	for class, count := range src {
+		dst[class] = count
+	}
+	return dst
+}
+
+func copyEquipment(src map[internal.EquipmentType]bool) map[internal.EquipmentType]bool {
+	dst := make(map[internal.EquipmentType]bool, len(src))
+	for eq, bought := range src {
+		dst[eq] = bought
+	}
+	return dst
 }

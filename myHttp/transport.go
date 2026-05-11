@@ -1,9 +1,10 @@
 package myHttp
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
-	"os"
 	"prj2/internal"
 	"prj2/logic"
 	"strconv"
@@ -17,6 +18,7 @@ import (
 type HTTPHandlers struct {
 	enterprise *logic.Enterprise
 	metrics    *Metrics
+	shutdown   func()
 }
 
 func NewHTTPHandlers(Entp *logic.Enterprise) *HTTPHandlers {
@@ -28,6 +30,7 @@ func NewHTTPHandlers(Entp *logic.Enterprise) *HTTPHandlers {
 
 func (h *HTTPHandlers) RegisterRoutes(r *mux.Router) {
 	r.Use(h.metrics.HTTPMiddleware)
+	r.HandleFunc("/health", h.Health).Methods(http.MethodGet)
 	r.Handle("/metrics", h.metrics.Handler()).Methods(http.MethodGet)
 
 	// - Шахтёры:
@@ -48,8 +51,10 @@ func (h *HTTPHandlers) RegisterRoutes(r *mux.Router) {
 
 	// - Предприятие:
 	//    NOTE: - Можно получить промежуточную информацию (текущий баланс, сколько каких шахтёров было нанято за всё время, и тд, по желанию)
+	r.HandleFunc("/enterprise/start", h.StartEntp).Methods(http.MethodPost)
 	r.HandleFunc("/enterprise/summary", h.SummaryEntp).Methods(http.MethodGet)
 	r.HandleFunc("/enterprise/status", h.StatusEntp).Methods(http.MethodGet)
+	r.HandleFunc("/events", h.Events).Methods(http.MethodGet)
 	//    NOTE: - Можно отправить запрос на завершение игры
 	r.HandleFunc("/enterprise/shutdown", h.ShutdownEntp).Methods(http.MethodPost)
 
@@ -57,6 +62,14 @@ func (h *HTTPHandlers) RegisterRoutes(r *mux.Router) {
 	r.HandleFunc("/app/close", h.AppClose).Methods(http.MethodPut)
 
 	r.PathPrefix("/").Handler(webHandler()).Methods(http.MethodGet)
+}
+
+func (h *HTTPHandlers) SetAppShutdown(shutdown func()) {
+	h.shutdown = shutdown
+}
+
+func (h *HTTPHandlers) Health(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
 /*
@@ -154,13 +167,19 @@ func (h *HTTPHandlers) ListOfActive(w http.ResponseWriter, r *http.Request) {
 	}
 
 	active := h.enterprise.ActiveMiners(limit)
-	list := make([]internal.MinerState, 0, len(active))
+	list := make([]MinerDTO, 0, len(active))
 
 	for _, m := range active {
 		if class != "" && string(m.Class) != class {
 			continue
 		}
-		list = append(list, m)
+		list = append(list, MinerDTO{
+			ID:            m.ID,
+			Class:         string(m.Class),
+			Energy:        m.Energy,
+			IsWorking:     m.IsWorking,
+			CoalPerMining: m.CoalPerMining,
+		})
 	}
 
 	writeJSON(w, http.StatusOK, list)
@@ -222,42 +241,35 @@ failed:
 */
 func (h *HTTPHandlers) PurchasedEquipment(w http.ResponseWriter, r *http.Request) {
 	s := h.enterprise.Status()
-	prices := internal.EquipmentPrices()
-	items := make([]EquipmentItemDTO, 0, len(prices))
-	availableTitles := make([]string, 0)
+	catalog := internal.EquipmentCatalog()
+	items := make([]EquipmentItemDTO, 0, len(catalog))
+	nextGoal, hasNextGoal := internal.NextEquipmentGoal(s.Equipment)
 
-	for eqType, price := range prices {
-		purchased := s.Equipment[eqType]
-		canBuyNow := !purchased && s.Balance >= price
-
-		title := ""
-		switch eqType {
-		case internal.EquipmentPickaxe:
-			title = "Кирка"
-		case internal.EquipmentVentilation:
-			title = "Вентиляция"
-		case internal.EquipmentWagon:
-			title = "Вагонетка"
-		default:
-			title = string(eqType)
-		}
-
-		if canBuyNow {
-			availableTitles = append(availableTitles, title)
-		}
+	for index, item := range catalog {
+		purchased := s.Equipment[item.Type]
+		isNextGoal := hasNextGoal && nextGoal.Type == item.Type
+		canBuyNow := !purchased && isNextGoal && s.Balance >= item.Price
 
 		items = append(items, EquipmentItemDTO{
-			Type:      string(eqType),
-			Title:     title,
-			Price:     price,
-			Purchased: purchased,
-			CanBuyNow: canBuyNow,
+			Type:        string(item.Type),
+			Title:       item.Title,
+			Description: item.Description,
+			Price:       item.Price,
+			Order:       index + 1,
+			Purchased:   purchased,
+			CanBuyNow:   canBuyNow,
+			IsNextGoal:  isNextGoal,
 		})
 	}
 
-	hint := "Пока недостаточно угля для покупки нового оборудования."
-	if len(availableTitles) > 0 {
-		hint = "Вы можете купить: " + strings.Join(availableTitles, ", ")
+	hint := "Копите уголь на следующую цель."
+	if hasNextGoal {
+		hint = "Следующая цель: " + nextGoal.Title
+		if s.Balance >= nextGoal.Price {
+			hint = "Можно купить следующую цель: " + nextGoal.Title
+		}
+	} else {
+		hint = "Все цели куплены. Можно завершить предприятие и начать новую игру."
 	}
 
 	writeJSON(w, http.StatusOK, EquipmentResponse{
@@ -302,11 +314,15 @@ func (h *HTTPHandlers) StatusEntp(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, EnterpriseStatusResponse{
-		Balance: snapshot.Balance, ActiveMiners: active, HiredStats: hired, Equipment: eq, Notifications: snapshot.Notifications,
+		Balance: snapshot.Balance, ActiveMiners: active, HiredStats: hired, Equipment: eq,
 	})
 }
 
 func (h *HTTPHandlers) SummaryEntp(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, h.summaryResponse())
+}
+
+func (h *HTTPHandlers) summaryResponse() EnterpriseSummaryResponse {
 	snapshot := h.enterprise.Summary()
 
 	hired := make(map[string]int, len(snapshot.HiredStats))
@@ -319,14 +335,69 @@ func (h *HTTPHandlers) SummaryEntp(w http.ResponseWriter, r *http.Request) {
 		eq[string(k)] = v
 	}
 
-	writeJSON(w, http.StatusOK, EnterpriseSummaryResponse{
+	goalProgress, goalTotal := equipmentGoalProgress(snapshot.Equipment)
+	nextGoal, hasNextGoal := internal.NextEquipmentGoal(snapshot.Equipment)
+	nextGoalTitle := ""
+	nextGoalPrice := 0
+	if hasNextGoal {
+		nextGoalTitle = nextGoal.Title
+		nextGoalPrice = nextGoal.Price
+	}
+
+	return EnterpriseSummaryResponse{
 		Balance:       snapshot.Balance,
 		ActiveCount:   snapshot.ActiveCount,
 		HiredStats:    hired,
 		Equipment:     eq,
-		Notifications: snapshot.Notifications,
+		GoalProgress:  goalProgress,
+		GoalTotal:     goalTotal,
+		GoalComplete:  goalProgress == goalTotal,
+		NextGoalTitle: nextGoalTitle,
+		NextGoalPrice: nextGoalPrice,
 		IsShutdown:    snapshot.IsShutdown,
-	})
+	}
+}
+
+func (h *HTTPHandlers) Events(w http.ResponseWriter, r *http.Request) {
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		writeErr(w, http.StatusInternalServerError, "streaming is not supported")
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+
+	send := func() bool {
+		data, err := json.Marshal(h.summaryResponse())
+		if err != nil {
+			return false
+		}
+		if _, err := fmt.Fprintf(w, "event: summary\ndata: %s\n\n", data); err != nil {
+			return false
+		}
+		flusher.Flush()
+		return true
+	}
+
+	if !send() {
+		return
+	}
+
+	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-r.Context().Done():
+			return
+		case <-ticker.C:
+			if !send() {
+				return
+			}
+		}
+	}
 }
 
 /*
@@ -366,13 +437,28 @@ func (h *HTTPHandlers) ShutdownEntp(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func (h *HTTPHandlers) AppClose(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, "goodbye.")
+func (h *HTTPHandlers) StartEntp(w http.ResponseWriter, r *http.Request) {
+	if err := h.enterprise.Start(); err != nil {
+		writeLogicErr(w, err)
+		return
+	}
 
-	go func() {
-		time.Sleep(500 * time.Millisecond)
-		os.Exit(0)
-	}()
+	h.SummaryEntp(w, r)
+}
+
+func (h *HTTPHandlers) AppClose(w http.ResponseWriter, _ *http.Request) {
+	_, _ = h.enterprise.Shutdown()
+	writeJSON(w, http.StatusOK, "stack shutdown started")
+
+	if h.shutdown != nil {
+		go func() {
+			time.Sleep(100 * time.Millisecond)
+			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+			defer cancel()
+			_ = stopComposeSupportContainers(ctx)
+			h.shutdown()
+		}()
+	}
 }
 
 // Быстрая отправка логической ошибки клиенту
@@ -392,4 +478,16 @@ func writeJSON(w http.ResponseWriter, code int, v any) { // v - это мапа/
 	w.Header().Set("Content-Type", "application/json") // говорим клиенту явно: в ответе JSON
 	w.WriteHeader(code)                                // поставить переданный HTTP статус для заголовка
 	_ = json.NewEncoder(w).Encode(v)                   // v (структуру/мапу), сериализует в JSON и пишет прямо в ответ
+}
+
+func equipmentGoalProgress(equipment map[internal.EquipmentType]bool) (int, int) {
+	progress := 0
+	goalItems := internal.EquipmentTypes()
+	for _, item := range goalItems {
+		if equipment[item] {
+			progress++
+		}
+	}
+
+	return progress, len(goalItems)
 }

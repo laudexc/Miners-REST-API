@@ -37,9 +37,9 @@
           <span class="metric-note" id="hired-breakdown">weak 0 / normal 0 / strong 0</span>
         </article>
         <article class="metric-card">
-          <span class="metric-label">Состояние</span>
-          <strong id="run-state">Running</strong>
-          <span class="metric-note" id="last-updated">ожидание данных</span>
+          <span class="metric-label">Цель</span>
+          <strong id="goal-progress">0/18</strong>
+          <span class="metric-note" id="goal-note">следующая цель загружается</span>
         </article>
       </section>
 
@@ -102,8 +102,9 @@
             </div>
           </div>
           <p class="panel-copy">Остановка завершает добычу и возвращает финальный отчет. После shutdown баланс не должен продолжать расти.</p>
+          <button id="start-button" class="start-button" type="button">Запустить предприятие</button>
           <button id="shutdown-button" class="danger-button" type="button">Остановить предприятие</button>
-          <div id="notifications" class="notifications" aria-live="polite"></div>
+          <button id="app-close-button" class="secondary-danger-button" type="button">Завершить приложение</button>
         </article>
       </section>
 

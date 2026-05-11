@@ -211,16 +211,30 @@ input {
 }
 
 .hire-form button,
-.danger-button {
+.danger-button,
+.start-button,
+.secondary-danger-button {
   min-height: 44px;
   padding: 0 18px;
   background: var(--green);
   color: #fff;
 }
 
-.danger-button {
+.danger-button,
+.start-button,
+.secondary-danger-button {
   width: 100%;
+  margin-bottom: 10px;
+}
+
+.danger-button {
   background: var(--red);
+}
+
+.secondary-danger-button {
+  border: 1px solid #e0b2ad;
+  background: #fff4f2;
+  color: var(--red);
 }
 
 .price-grid {
@@ -230,8 +244,7 @@ input {
 
 .price-row,
 .equipment-item,
-.miner-row,
-.notification {
+.miner-row {
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--surface-strong);
@@ -258,8 +271,7 @@ input {
 }
 
 .equipment-list,
-.miners-list,
-.notifications {
+.miners-list {
   display: grid;
   gap: 10px;
 }
@@ -321,12 +333,6 @@ input {
   border-radius: 8px;
   color: var(--muted);
   text-align: center;
-}
-
-.notification {
-  padding: 12px;
-  color: var(--muted);
-  font-size: 14px;
 }
 
 .toast {

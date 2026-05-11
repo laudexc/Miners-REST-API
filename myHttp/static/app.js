@@ -1,11 +1,13 @@
 const state = {
   prices: {},
+  equipmentTitles: {},
   stopped: false,
   toastTimer: null,
+  detailsLoading: false,
+  goalPromptShown: false,
 };
 
 const minerClassOrder = ["weak", "normal", "strong"];
-const equipmentOrder = ["pickaxe", "ventilation", "wagon"];
 const activePreviewLimit = 60;
 
 const elements = {
@@ -13,17 +15,18 @@ const elements = {
   activeCount: document.querySelector("#active-count"),
   hiredTotal: document.querySelector("#hired-total"),
   hiredBreakdown: document.querySelector("#hired-breakdown"),
-  runState: document.querySelector("#run-state"),
-  lastUpdated: document.querySelector("#last-updated"),
+  goalProgress: document.querySelector("#goal-progress"),
+  goalNote: document.querySelector("#goal-note"),
   hireForm: document.querySelector("#hire-form"),
   minerClass: document.querySelector("#miner-class"),
   minerCount: document.querySelector("#miner-count"),
   minerPrices: document.querySelector("#miner-prices"),
   equipmentList: document.querySelector("#equipment-list"),
   activeMiners: document.querySelector("#active-miners"),
-  notifications: document.querySelector("#notifications"),
   refreshButton: document.querySelector("#refresh-button"),
+  startButton: document.querySelector("#start-button"),
   shutdownButton: document.querySelector("#shutdown-button"),
+  appCloseButton: document.querySelector("#app-close-button"),
   toast: document.querySelector("#toast"),
 };
 
@@ -66,12 +69,7 @@ function minerClassTitle(className) {
 }
 
 function equipmentTitle(type) {
-  const titles = {
-    pickaxe: "Кирка",
-    ventilation: "Вентиляция",
-    wagon: "Вагонетка",
-  };
-  return titles[type] || type;
+  return state.equipmentTitles[type] || type;
 }
 
 function renderPrices() {
@@ -107,11 +105,18 @@ function renderStatus(status) {
   elements.hiredTotal.textContent = formatNumber(total);
   elements.hiredBreakdown.textContent = `weak ${weak} / normal ${normal} / strong ${strong}`;
   state.stopped = state.stopped || Boolean(status.is_shutdown);
-  elements.runState.textContent = state.stopped ? "Stopped" : "Running";
-  elements.lastUpdated.textContent = new Date().toLocaleTimeString("ru-RU");
+  elements.goalProgress.textContent = `${status.goal_progress || 0}/${status.goal_total || 0}`;
+  elements.goalNote.textContent = status.goal_complete
+    ? "все цели закрыты"
+    : `следующая: ${status.next_goal_title || "оборудование"} (${formatNumber(status.next_goal_price)} угля)`;
+  elements.startButton.disabled = !state.stopped;
+  elements.shutdownButton.disabled = state.stopped;
 
-  renderActiveMiners(status.active_preview || [], status.active_count || 0);
-  renderNotifications(status.notifications || []);
+  if ("active_preview" in status) {
+    renderActiveMiners(status.active_preview || [], status.active_count || 0);
+  }
+
+  maybeOfferRunFinish(status);
 }
 
 function renderActiveMiners(miners, total) {
@@ -143,36 +148,35 @@ function renderActiveMiners(miners, total) {
   elements.activeMiners.innerHTML = rows + hiddenMessage;
 }
 
-function renderNotifications(notifications) {
-  if (notifications.length === 0) {
-    elements.notifications.innerHTML = '<div class="empty-state">Уведомления появятся на балансных отметках</div>';
-    return;
-  }
-
-  elements.notifications.innerHTML = notifications
-    .slice()
-    .reverse()
-    .map((message) => `<div class="notification">${message}</div>`)
-    .join("");
-}
-
 function renderEquipment(data) {
   const items = (data.items || []).slice().sort((a, b) => {
-    return equipmentOrder.indexOf(a.type) - equipmentOrder.indexOf(b.type);
+    return (a.order || 0) - (b.order || 0);
   });
   if (items.length === 0) {
     elements.equipmentList.innerHTML = '<div class="empty-state">Оборудование загружается</div>';
     return;
   }
 
+  state.equipmentTitles = {};
+  items.forEach((item) => {
+    state.equipmentTitles[item.type] = item.title;
+  });
+
   elements.equipmentList.innerHTML = items
     .map((item) => {
       const className = item.purchased ? "purchased" : item.can_buy_now ? "" : "locked";
-      const label = item.purchased ? "Куплено" : item.can_buy_now ? "Купить" : "Недостаточно угля";
+      const label = item.purchased
+        ? "Куплено"
+        : item.can_buy_now
+          ? "Купить"
+          : item.is_next_goal
+            ? "Недостаточно угля"
+            : "Ждет очереди";
       return `
         <div class="equipment-item ${className}">
           <div>
-            <strong>${equipmentTitle(item.type)}</strong>
+            <strong>${item.order}. ${item.title}</strong>
+            <span>${item.description}</span>
             <span>Цена ${formatNumber(item.price)} угля</span>
           </div>
           <button type="button" data-buy="${item.type}" ${item.purchased || !item.can_buy_now || state.stopped ? "disabled" : ""}>
@@ -182,6 +186,20 @@ function renderEquipment(data) {
       `;
     })
     .join("");
+}
+
+function maybeOfferRunFinish(status) {
+  if (!status.goal_complete || state.stopped || state.goalPromptShown) {
+    return;
+  }
+
+  state.goalPromptShown = true;
+  window.setTimeout(() => {
+    const shouldStop = window.confirm("Все цели предприятия выполнены. Остановить предприятие и зафиксировать финальный результат?");
+    if (shouldStop) {
+      shutdownEnterprise({ skipConfirm: true });
+    }
+  }, 100);
 }
 
 async function refreshAll() {
@@ -196,6 +214,42 @@ async function refreshAll() {
   } catch (error) {
     showToast(error.message, "error");
   }
+}
+
+async function refreshDetails(summary) {
+  if (state.detailsLoading) return;
+  state.detailsLoading = true;
+  try {
+    const [active, equipment] = await Promise.all([
+      requestJSON(`/miners/active?limit=${activePreviewLimit}`),
+      requestJSON("/equipment"),
+    ]);
+    renderStatus({ ...summary, active_preview: active });
+    renderEquipment(equipment);
+  } catch (error) {
+    showToast(error.message, "error");
+  } finally {
+    state.detailsLoading = false;
+  }
+}
+
+function connectEvents() {
+  if (!window.EventSource) {
+    window.setInterval(refreshAll, 2000);
+    return;
+  }
+
+  const source = new EventSource("/events");
+  source.addEventListener("summary", (event) => {
+    const summary = JSON.parse(event.data);
+    renderStatus(summary);
+    refreshDetails(summary);
+  });
+  source.onerror = () => {
+    source.close();
+    showToast("SSE connection lost, switched to periodic refresh", "error");
+    window.setInterval(refreshAll, 2000);
+  };
 }
 
 async function loadPrices() {
@@ -233,7 +287,11 @@ async function buyEquipment(type) {
   }
 }
 
-async function shutdownEnterprise() {
+async function shutdownEnterprise(options = {}) {
+  if (!options.skipConfirm && !window.confirm("Остановить предприятие? Добыча будет остановлена, но приложение продолжит работать.")) {
+    return;
+  }
+
   try {
     const result = await requestJSON("/enterprise/shutdown", { method: "POST" });
     state.stopped = true;
@@ -250,9 +308,40 @@ async function shutdownEnterprise() {
   }
 }
 
+async function startEnterprise() {
+  try {
+    const summary = await requestJSON("/enterprise/start", { method: "POST" });
+    state.stopped = false;
+    state.goalPromptShown = false;
+    showToast("Предприятие запущено заново");
+    renderStatus({ ...summary, active_preview: [] });
+    await refreshAll();
+  } catch (error) {
+    showToast(error.message, "error");
+  }
+}
+
+async function closeApplication() {
+  if (!window.confirm("Завершить приложение? HTTP API остановится, а страница потеряет соединение.")) {
+    return;
+  }
+
+  try {
+    await requestJSON("/app/close", { method: "PUT" });
+    showToast("Приложение корректно завершает работу");
+    elements.appCloseButton.disabled = true;
+    elements.shutdownButton.disabled = true;
+    elements.startButton.disabled = true;
+  } catch (error) {
+    showToast(error.message, "error");
+  }
+}
+
 elements.hireForm.addEventListener("submit", hireMiner);
 elements.refreshButton.addEventListener("click", refreshAll);
+elements.startButton.addEventListener("click", startEnterprise);
 elements.shutdownButton.addEventListener("click", shutdownEnterprise);
+elements.appCloseButton.addEventListener("click", closeApplication);
 elements.equipmentList.addEventListener("click", (event) => {
   const button = event.target.closest("[data-buy]");
   if (!button) return;
@@ -262,4 +351,4 @@ elements.equipmentList.addEventListener("click", (event) => {
 renderPrices();
 refreshAll();
 loadPrices();
-window.setInterval(refreshAll, 2000);
+connectEvents();
