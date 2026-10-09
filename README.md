@@ -47,7 +47,7 @@ flowchart LR
     App --> Logic["Enterprise logic<br/>aggregated simulation"]
 ```
 
-```
+```mermaid
 flowchart LR
     subgraph CLIENT["Клиентский интерфейс"]
         direction TB
