@@ -40,15 +40,6 @@ Backend написан на Go. HTTP-роутинг сделан через `git
 
 ```mermaid
 flowchart LR
-    Browser["Web UI<br/>localhost:8081"] -->|REST commands| App["Go app<br/>:8080 inside container"]
-    Browser -->|SSE /events| App
-    App -->|/metrics| Prometheus["Prometheus<br/>localhost:9090"]
-    Grafana["Grafana<br/>localhost:3000"] -->|PromQL| Prometheus
-    App --> Logic["Enterprise logic<br/>aggregated simulation"]
-```
-
-```mermaid
-flowchart LR
     subgraph CLIENT["Клиентский интерфейс"]
         direction TB
         Browser["Web UI<br/>localhost:8081"]
