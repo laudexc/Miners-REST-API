@@ -47,6 +47,36 @@ flowchart LR
     App --> Logic["Enterprise logic<br/>aggregated simulation"]
 ```
 
+```
+flowchart LR
+    subgraph CLIENT["Клиентский интерфейс"]
+        direction TB
+        Browser["Web UI<br/>localhost:8081"]
+    end
+
+    subgraph BACKEND["Backend"]
+        direction TB
+        App["Go app<br/>:8080 inside container"]
+        Logic["Enterprise logic<br/>aggregated simulation"]
+        App --> Logic
+    end
+
+    subgraph MONITORING["Мониторинг"]
+        direction TB
+        Prometheus["Prometheus<br/>localhost:9090"]
+        Grafana["Grafana<br/>localhost:3000"]
+        Grafana -->|PromQL| Prometheus
+    end
+
+    Browser -->|REST commands| App
+    Browser -.->|SSE /events| App
+    App -->|/metrics| Prometheus
+
+    style CLIENT fill:none,stroke:#64748b,stroke-width:1px
+    style BACKEND fill:none,stroke:#64748b,stroke-width:1px
+    style MONITORING fill:none,stroke:#64748b,stroke-width:1px
+```
+
 `cmd/app` создает enterprise-состояние, запускает симуляцию и поднимает HTTP-сервер. Пакет `logic` отвечает за бизнес-правила: баланс, найм, покупку оборудования, shutdown/start и агрегированную добычу. Пакет `myHttp` содержит handlers, DTO, middleware, Prometheus collector, SSE endpoint и встроенный frontend. Пакет `internal` хранит доменные типы, классы шахтеров, параметры добычи и цены оборудования.
 
 Web UI общается с backend двумя способами. Для команд вроде найма, покупки оборудования, остановки предприятия или завершения приложения используются обычные REST-запросы. Для live-обновления состояния используется `GET /events`: сервер держит SSE-соединение и раз в секунду отправляет актуальную легкую сводку предприятия.
